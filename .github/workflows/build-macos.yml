@@ -1,0 +1,139 @@
+name: Build ONLYOFFICE macOS (x86_64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      oo_tag:
+        description: "Upstream ONLYOFFICE release tag"
+        required: true
+        default: "v10.0.0"
+        type: string
+      publish_release:
+        description: "Publish/update GitHub Release with built DMG"
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-x86_64:
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    env:
+      OO_TAG: ${{ github.event.inputs.oo_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v10.0.0' }}
+
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3 & `python` shim
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Add `python` shim to PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/shims"
+          ln -sf "$(which python3)" "$RUNNER_TEMP/shims/python"
+          echo "$RUNNER_TEMP/shims" >> "$GITHUB_PATH"
+          python --version
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Qt 5.15.2 (qmake)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          cache: true
+
+      - name: Clone ONLYOFFICE sources (${{ env.OO_TAG }}) & apply patches
+        run: |
+          mkdir -p work
+          for repo in build_tools core desktop-sdk desktop-apps; do
+            echo "== Cloning ONLYOFFICE/$repo @ $OO_TAG =="
+            git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/$repo.git" "work/$repo"
+          done
+          echo "== Cloning ONLYOFFICE/web-apps @ $OO_TAG =="
+          git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/web-apps.git" "work/web-apps"
+          bash scripts/apply_patches.sh "$PWD/work"
+
+      - name: Restore cached SDK static dependencies (ICU 74.2 + Boost 1.72 + CryptoPP + CompoundFile)
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/core/Common/3dParty/icu/mac_64/build
+            work/core/Common/3dParty/boost/build/mac_64
+            work/core/Common/3dParty/hunspell/hunspell
+            work/core/Common/3dParty/hunspell/autogen
+            work/core/build/lib/mac_64/libCryptoPPLib.a
+            work/core/build/lib/mac_64/libCompoundFileLib.a
+          key: oo-sdk-static-deps-mac64-${{ env.OO_TAG }}-v1
+
+      - name: Download & mount official ONLYOFFICE-x86_64.dmg (${{ env.OO_TAG }})
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/ONLYOFFICE-x86_64.dmg" \
+            "https://github.com/ONLYOFFICE/DesktopEditors/releases/download/${OO_TAG}/ONLYOFFICE-x86_64.dmg"
+          mkdir -p "$RUNNER_TEMP/oo-mnt"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/oo-mnt" "$RUNNER_TEMP/ONLYOFFICE-x86_64.dmg"
+          ls -la "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app/Contents"
+
+      - name: Build overlay desktop-sdk (`ascdocumentscore.framework`)
+        run: |
+          QT_PARENT="$(dirname "$QT_ROOT_DIR")"
+          python3 -u scripts/build_overlay_sdk.py "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$QT_PARENT"
+
+      - name: Build web-apps + loginpage, assemble app & package DMG
+        run: |
+          OUT_DMG="$PWD/artifacts/ONLYOFFICE-${OO_TAG}-macos-x86_64-custom.dmg"
+          bash scripts/package_dmg.sh "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$OUT_DMG" "$OO_TAG"
+          shasum -a 256 "$OUT_DMG" | tee "$OUT_DMG.sha256"
+
+      - name: Detach official DMG
+        if: always()
+        run: hdiutil detach "$RUNNER_TEMP/oo-mnt" >/dev/null 2>&1 || true
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ONLYOFFICE-${{ env.OO_TAG }}-macos-x86_64-custom
+          path: |
+            artifacts/*.dmg
+            artifacts/*.sha256
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REL_TAG="${OO_TAG}-custom"
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            REL_TAG="${GITHUB_REF_NAME}"
+          fi
+          NOTES="ONLYOFFICE Desktop Editors ${OO_TAG} macOS Intel (x86_64) 定制增强版。
+
+          ### 包含改动
+          - 主程序「设置 → 常规」新增 **自定义字体目录** 配置项（按需配置、持久化保存，支持 \`~\` 展开与 \`;\` 多目录）
+          - 清理全库 100+ 处简体中文界面的繁体残留与错译（含底栏「缩放」、菜单文字方向等）
+          - 修复 38 语言 \`Localizable.stringsdict\` 复数占位符损坏导致的未保存退出提示框 \`#@文档@\` 问题
+          - 修复拼写语言检测「已停用」重启失效与编辑器拼写开关读取问题
+          - 修复 macOS 中文输入法（\`zh-Hans\` / \`zh-Hant\`）LCID 映射及新建文档默认语言跳回英文的问题
+
+          > 首次打开若遇到 macOS 未公证提示，将 \`ONLYOFFICE.app\` 拖入 \`/Applications\` 后执行：
+          > \`xattr -cr /Applications/ONLYOFFICE.app\`"
+
+          if gh release view "$REL_TAG" >/dev/null 2>&1; then
+            gh release upload "$REL_TAG" artifacts/*.dmg artifacts/*.sha256 --clobber
+          else
+            gh release create "$REL_TAG" artifacts/*.dmg artifacts/*.sha256 \
+              --title "ONLYOFFICE ${OO_TAG} macOS (x86_64) Custom" \
+              --notes "$NOTES"
+          fi

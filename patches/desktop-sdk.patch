@@ -1,0 +1,122 @@
+diff --git a/ChromiumBasedEditors/lib/src/applicationmanager.cpp b/ChromiumBasedEditors/lib/src/applicationmanager.cpp
+index 865c52c..e0870e6 100644
+--- a/ChromiumBasedEditors/lib/src/applicationmanager.cpp
++++ b/ChromiumBasedEditors/lib/src/applicationmanager.cpp
+@@ -41,6 +41,9 @@
+ #include "../native-plugins/src/plugin_manager.h"
+ #include "../native-plugins/src/plugin_host_browser.h"
+ #include "../../../../core/DesktopEditor/common/Path.h"
++#include "../../../../core/DesktopEditor/common/Directory.h"
++#include "../../../../core/DesktopEditor/common/StringExt.h"
++#include <algorithm>
+ 
+ #ifndef _WIN32
+ #include <stdio.h>
+@@ -233,6 +236,10 @@ void CUserSettings::Set(const std::wstring& name, const std::wstring& value)
+ 	m_pInternal->m_pManager->m_pInternal->SaveSettings(&m_pInternal->m_mapSettings);
+ 	m_pInternal->m_pManager->m_pInternal->LoadSettings();
+ 
++	// views keep the last sent layout, so resend the current state (-1 when detection is disabled)
++	if (L"spell-check-input-mode" == name)
++		m_pInternal->m_pManager->SendKeyboardAttack();
++
+ 	if (L"force-scale" == name)
+ 	{
+ 		std::map<int, CCefView*>* mapViews = &m_pInternal->m_pManager->m_pInternal->m_mapViews;
+@@ -678,21 +685,57 @@ CCefViewEditor* CAscApplicationManager::CreateCefPresentationReporter(CCefViewWi
+ 	return pView;
+ }
+ 
++static std::wstring GetLanguagePart(const std::wstring& sLocale)
++{
++	std::wstring sLanguage = sLocale.substr(0, sLocale.find_first_of(L"-_"));
++	NSStringExt::ToLower(sLanguage);
++	return sLanguage;
++}
++
++// the lang param can be a bare ("zh") or synthetic ("zh-ZH") code, match it to an existing locale folder by language
++static std::wstring GetEmptyTemplatesLocale(const std::wstring& sEmptyDir, const std::wstring& sLang)
++{
++	if (!sLang.empty() && NSDirectory::Exists(sEmptyDir + sLang))
++		return sLang;
++
++	std::wstring sLanguage = GetLanguagePart(sLang);
++	// en-EN support (documents have en-GB and en-US)
++	if (sLanguage.empty() || L"en" == sLanguage)
++		return L"en-US";
++
++	std::wstring sPreferred = sLanguage + L"-" + sLanguage;
++	NSStringExt::ToUpper(sPreferred);
++
++	std::vector<std::wstring> arCandidates;
++	std::vector<std::wstring> arDirs = NSDirectory::GetDirectories(sEmptyDir);
++	for (const std::wstring& sDir : arDirs)
++	{
++		std::wstring sName = NSFile::GetFileName(sDir);
++		if (GetLanguagePart(sName) != sLanguage)
++			continue;
++
++		std::wstring sNameUpper = sName;
++		NSStringExt::ToUpper(sNameUpper);
++		if (sNameUpper == sPreferred)
++			return sName;
++
++		arCandidates.push_back(sName);
++	}
++
++	if (arCandidates.empty())
++		return L"en-US";
++
++	std::sort(arCandidates.begin(), arCandidates.end());
++	return arCandidates[0];
++}
++
+ std::wstring CAscApplicationManager::GetNewFilePath(const AscEditorType& nFileFormat)
+ {
+ 	std::string sCountry = m_oSettings.country;
+ 	NSCommon::makeUpper(sCountry);
+ 
+-	std::wstring sPrefix = NSUrlParse::GetUrlValue(m_pInternal->m_sAdditionalUrlParams, L"lang");
+-	if (!sPrefix.empty() && NSDirectory::Exists(m_oSettings.file_converter_path + L"/empty/" + sPrefix))
+-	{
+-		sPrefix += L"/";
+-	}
+-	else
+-	{
+-		// en-EN support (documents have en-GB and en-US)
+-		sPrefix = L"en-US/";
+-	}
++	std::wstring sPrefix = GetEmptyTemplatesLocale(m_oSettings.file_converter_path + L"/empty/",
++												   NSUrlParse::GetUrlValue(m_pInternal->m_sAdditionalUrlParams, L"lang")) + L"/";
+ 
+ 	std::wstring sFilePath = m_oSettings.file_converter_path + L"/empty/" + sPrefix + L"new.";
+ 	std::wstring sExtension = L"docx";
+diff --git a/ChromiumBasedEditors/lib/src/applicationmanager_p.h b/ChromiumBasedEditors/lib/src/applicationmanager_p.h
+index 74a57c4..28e391b 100644
+--- a/ChromiumBasedEditors/lib/src/applicationmanager_p.h
++++ b/ChromiumBasedEditors/lib/src/applicationmanager_p.h
+@@ -2121,7 +2121,7 @@ public:
+ 
+ 		std::map<std::string, std::string>::iterator pairSpell = _map->find("spell-check-input-mode");
+ 		if (pairSpell != _map->end())
+-			m_bIsUseSpellCheckKeyboardInput = ("0" == pairSpell->second) ? false : true;
++			m_bIsUseSpellCheckKeyboardInput = ("0" == pairSpell->second || "false" == pairSpell->second || "off" == pairSpell->second) ? false : true;
+ 		else
+ 			m_bIsUseSpellCheckKeyboardInput = true;
+ 
+diff --git a/ChromiumBasedEditors/lib/src/mac_keyboardlayout.mm b/ChromiumBasedEditors/lib/src/mac_keyboardlayout.mm
+index 38c93d3..62a7868 100644
+--- a/ChromiumBasedEditors/lib/src/mac_keyboardlayout.mm
++++ b/ChromiumBasedEditors/lib/src/mac_keyboardlayout.mm
+@@ -82,9 +82,9 @@ uint16_t GetKeyboardLayout(void)
+    if (!language.empty()) {
+         if (!script.empty())
+             language.append("_" + script);
+-        else
++
+         if (region.empty()) {
+-            // try prevent neutral language
++            // try prevent neutral language (e.g. zh_Hans -> zh_Hans_CN)
+             UErrorCode status = U_ZERO_ERROR;
+             char fullName[ULOC_FULLNAME_CAPACITY];
+             uloc_addLikelySubtags(language.c_str(), fullName, ULOC_FULLNAME_CAPACITY, &status);

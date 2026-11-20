@@ -1,0 +1,604 @@
+diff --git a/common/loginpage/locale/en-GB.js b/common/loginpage/locale/en-GB.js
+index 848bc03..51eb482 100644
+--- a/common/loginpage/locale/en-GB.js
++++ b/common/loginpage/locale/en-GB.js
+@@ -163,5 +163,7 @@ export default {
+     settRemoveAddon: 'ONLYOFFICE AI Tools',
+     descrRemoveAddon: 'ONLYOFFICE AI Tools: AI across all editors, smart forms, custom providers, advanced PDF',
+     strLicensedUnder: 'Licensed under',
++    settExtraFontsDir: 'Custom fonts folder',
++    settExtraFontsDirPlaceholder: 'Not set (system & built-in fonts only)',
+     tplNoInternet: "Online templates aren't available because of some internet connection problems. You can create new documents using the options above.",
+ }
+diff --git a/common/loginpage/locale/en-US.js b/common/loginpage/locale/en-US.js
+index a11deb2..6e3e885 100644
+--- a/common/loginpage/locale/en-US.js
++++ b/common/loginpage/locale/en-US.js
+@@ -141,6 +141,8 @@ export default {
+     settOptLaunchInTab: 'In its own tab',
+     settOptLaunchInWindow: 'In its own window',
+     settSpellcheckDetection: 'Spelling language detection',
++    settExtraFontsDir: 'Custom fonts folder',
++    settExtraFontsDirPlaceholder: 'Not set (system & built-in fonts only)',
+     settOptDisabled: 'Disabled',
+     settOptEnabled: 'Enabled',
+     aboutChangelog: 'Changelog',
+diff --git a/common/loginpage/locale/zh-CN.js b/common/loginpage/locale/zh-CN.js
+index 91d9483..42f9832 100644
+--- a/common/loginpage/locale/zh-CN.js
++++ b/common/loginpage/locale/zh-CN.js
+@@ -106,6 +106,8 @@ export default {
+     settOptLaunchInTab: '在新标签页中打开',
+     settOptLaunchInWindow: '在新窗口中打开',
+     settSpellcheckDetection: '拼写语言检测',
++    settExtraFontsDir: '自定义字体目录',
++    settExtraFontsDirPlaceholder: '未设置（仅加载系统与内置字体）',
+     settOptDisabled: '已停用',
+     settOptEnabled: '已启用',
+     aboutChangelog: '更新日志',
+diff --git a/common/loginpage/locale/zh-TW.js b/common/loginpage/locale/zh-TW.js
+index 5ba12d2..38ed507 100644
+--- a/common/loginpage/locale/zh-TW.js
++++ b/common/loginpage/locale/zh-TW.js
+@@ -156,5 +156,7 @@ export default {
+     settRemoveAddon: 'ONLYOFFICE AI Tools',
+     descrRemoveAddon: 'ONLYOFFICE AI Tools: 所有編輯器中的AI、智慧表單、自訂提供商、進階PDF',
+     strLicensedUnder: '授權於',
++    settExtraFontsDir: '自訂字型資料夾',
++    settExtraFontsDirPlaceholder: '未設定（僅載入系統與內建字型）',
+     tplNoInternet: '由於網路連線問題，線上範本目前無法使用。您可以使用上方的選項建立新文件。',
+ }
+diff --git a/common/loginpage/src/routes/settings/general/index.jsx b/common/loginpage/src/routes/settings/general/index.jsx
+index adc7ea0..4a5e515 100644
+--- a/common/loginpage/src/routes/settings/general/index.jsx
++++ b/common/loginpage/src/routes/settings/general/index.jsx
+@@ -9,6 +9,7 @@ import { availableLangs,
+         setUserNameError,
+         uninstallAddon,
+         textDirectionChanged,
++        browseExtraFontsDir,
+         setIsOptsChanged,
+         langRestartPending} from "@/services/settings-sync";
+ import { command } from "@/sdk/bridge";
+@@ -208,6 +209,24 @@ export default function GeneralSettings() {
+           </div>
+         </div>
+ 
++        <Show when={settings.extraFontsDir !== undefined}>
++          <div class={styles.fieldRow}>
++            <span class={styles.fieldLabel}>{t("settExtraFontsDir", "Custom fonts folder")} *</span>
++            <div class={styles.fieldControlInline}>
++              <TextField
++                class={styles.inlineInput}
++                value={settings.extraFontsDir}
++                onChange={(v) => setSettings("extraFontsDir", v)}
++              >
++                <TextField.Input placeholder={t("settExtraFontsDirPlaceholder", "Not set (system & built-in fonts only)")} />
++              </TextField>
++              <Button variant="default" class={styles.browseBtn} onClick={browseExtraFontsDir}>
++                {t("btnBrowse")}
++              </Button>
++            </div>
++          </div>
++        </Show>
++
+         <div class={styles.fieldRowAuto}>
+           <label for="gpu-mode" class={styles.fieldLabelBlock}>
+             {t("settGpuUseMode")} *<span class={styles.fieldDescription}>{t("settingsGpuUseModeDescr")}</span>
+diff --git a/common/loginpage/src/routes/settings/general/index.module.css b/common/loginpage/src/routes/settings/general/index.module.css
+index b4bb17f..85f283f 100644
+--- a/common/loginpage/src/routes/settings/general/index.module.css
++++ b/common/loginpage/src/routes/settings/general/index.module.css
+@@ -38,6 +38,25 @@
+   width: 100%;
+ }
+ 
++.fieldControlInline {
++  min-width: 0;
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++
++.inlineInput {
++  flex: 1;
++  min-width: 0;
++}
++
++.browseBtn {
++  height: 32px;
++  min-width: auto;
++  padding: 0 12px;
++  flex-shrink: 0;
++}
++
+ .formHeader {
+   display: flex;
+   justify-content: flex-end;
+diff --git a/common/loginpage/src/services/settings-sync.js b/common/loginpage/src/services/settings-sync.js
+index dc770ab..05b508a 100644
+--- a/common/loginpage/src/services/settings-sync.js
++++ b/common/loginpage/src/services/settings-sync.js
+@@ -123,6 +123,13 @@ const [userNameError, setUserNameError] = createSignal(false);
+ const [appliedUseAi, setAppliedUseAi] = createSignal(settings.useai);
+ export { availableLangs, langRestartPending, customThemes, systemThemeEnabled, isOptsChanged, setIsOptsChanged, pendingApplyText, userNameError, setUserNameError, appliedUseAi };
+ 
++const nativeSpellCheckToStore = (value) => {
++  const mode = String(value).toLowerCase();
++  if (["off", "disabled", "0", "false"].includes(mode)) return "disabled";
++  if (["enabled", "on", "1", "true"].includes(mode)) return "enabled";
++  return "auto";
++};
++
+ let _applySettings = () => {};
+ let _removeAddon = () => {};
+ let _textDirectionChanged = () => {};
+@@ -130,6 +137,7 @@ let _textDirectionChanged = () => {};
+ export const applySettings = () => _applySettings();
+ export const uninstallAddon = () => _removeAddon();
+ export const textDirectionChanged = () => _textDirectionChanged();
++export const browseExtraFontsDir = () => command("settings:get", "extrafontsdir");
+ 
+ export function initSettingsSync() {
+   const [nativeSnapshot, setNativeSnapshot] = createSignal(null);
+@@ -178,7 +186,7 @@ export function initSettingsSync() {
+   createEffect(() => {
+     settings.lang; settings.scaling; settings.theme;
+     settings.checkUpdates; settings.launchMode; settings.spellCheck;
+-    settings.gpuMode; settings.userName; settings.useai;
++    settings.extraFontsDir; settings.gpuMode; settings.userName; settings.useai;
+     settings.country;
+     if (!initialized) return;
+     setIsOptsChanged(true);
+@@ -214,15 +222,21 @@ export function initSettingsSync() {
+     const country= settings.country;
+ 
+     let restart = false;
++    const extraFontsNormalized = settings.extraFontsDir !== undefined ? settings.extraFontsDir.trim() : undefined;
+     if (snap !== null) {
++      const prevExtraFonts = String(snap.extrafontsdir ?? "").trim();
+       restart = (aichat.available && settings.useai !== !!snap.useai) ||
+                   (!!scaling && scaling !== nativeScalingToStore(snap.uiscaling)) ||
+                   settings.gpuMode !== !!snap.usegpu ||
++                  (extraFontsNormalized !== undefined && extraFontsNormalized !== prevExtraFonts) ||
+                   textDirectionChanged() || (langRestartPending() && snap.locale.current != lang);
+ 
+       if (snap.useai != settings.useai){
+         setAddonNeedRestart(true);
+       }
++      if (extraFontsNormalized !== undefined) {
++        snap.extrafontsdir = extraFontsNormalized;
++      }
+     }
+ 
+     snap.useai = settings.useai;
+@@ -241,6 +255,8 @@ export function initSettingsSync() {
+       restart: restart,
+       country: country,
+     };
++    if (extraFontsNormalized !== undefined)
++      new_settings.extrafontsdir = extraFontsNormalized;
+     if (!!scaling)
+       new_settings.uiscaling = scaling === "auto" ? "0" : scaling;
+     if (!!updates)
+@@ -300,7 +316,8 @@ export function initSettingsSync() {
+           applyThemeToDom(payload.uitheme);
+         }
+         if (payload.editorwindowmode != null) setSettings("launchMode", payload.editorwindowmode ? settDefs.EDITOR_MODE_WINDOW : settDefs.EDITOR_MODE_TAB);
+-        if (payload.spellcheckdetect) setSettings("spellCheck", payload.spellcheckdetect);
++        if (payload.spellcheckdetect) setSettings("spellCheck", nativeSpellCheckToStore(payload.spellcheckdetect));
++        setSettings("extraFontsDir", "extrafontsdir" in payload ? String(payload.extrafontsdir ?? "") : undefined);
+         if (payload.usegpu != null) setSettings("gpuMode", !!payload.usegpu);
+         if (payload.useai != null) {
+           setSettings("useai", !!payload.useai);
+@@ -332,6 +349,10 @@ export function initSettingsSync() {
+         setSettings("userName", param);
+         setUserNameError(false);
+       }
++    } else if (msgCmd === "settings:extrafontsdir") {
++      if (param != null) {
++        setSettings("extraFontsDir", param);
++      }
+     } else if (msgCmd === "settings:lang") {
+       if (param.startsWith("restart:")) setLangRestartPending(param === "restart:true");
+     } else if (msgCmd === "addon:action") {
+diff --git a/common/loginpage/src/stores/settings.js b/common/loginpage/src/stores/settings.js
+index f0477dd..ed57049 100644
+--- a/common/loginpage/src/stores/settings.js
++++ b/common/loginpage/src/stores/settings.js
+@@ -55,6 +55,7 @@ const defaultSettings = Object.freeze({
+   theme: defs.THEME_ID_DEFAULT_LIGHT,
+   launchMode: defs.EDITOR_MODE_TAB,
+   spellCheck: "auto",
++  extraFontsDir: undefined,
+   gpuMode: true,
+   useai: true,
+   showai: false,
+diff --git a/macos/ONLYOFFICE/Code/Controllers/Common/ASCCommonViewController.mm b/macos/ONLYOFFICE/Code/Controllers/Common/ASCCommonViewController.mm
+index 421d8b9..8643726 100644
+--- a/macos/ONLYOFFICE/Code/Controllers/Common/ASCCommonViewController.mm
++++ b/macos/ONLYOFFICE/Code/Controllers/Common/ASCCommonViewController.mm
+@@ -1096,11 +1096,18 @@ - (void)onCEFStartPageReady:(NSNotification *)notification {
+ 
+     CAscApplicationManager * appManager = [NSAscApplicationWorker getAppManager];
+     bool usegpu = !(appManager->GetUserSettings()->Get(L"disable-gpu") == L"1"),
+-    editorinwindow = appManager->GetUserSettings()->Get(L"editor-window-mode") == L"1",
+-    detectkeyboard = !(appManager->GetUserSettings()->Get(L"spell-check-input-mode") == L"0");
++    editorinwindow = appManager->GetUserSettings()->Get(L"editor-window-mode") == L"1";
++    NSString * spellDetectMode = [[NSString stringWithstdwstring:appManager->GetUserSettings()->Get(L"spell-check-input-mode")] lowercaseString];
++    NSString * spellDetect = @"auto";
++    if ([@[@"0", @"false", @"off"] containsObject:spellDetectMode])
++        spellDetect = @"disabled";
++    else if ([@[@"1", @"true", @"on"] containsObject:spellDetectMode])
++        spellDetect = @"enabled";
+     [json_langs setValue:@(usegpu) forKey:@"usegpu"];
+-    [json_langs setValue:detectkeyboard?@"auto":@"off" forKey:@"spellcheckdetect"];
++    [json_langs setValue:spellDetect forKey:@"spellcheckdetect"];
+     [json_langs setValue:@(editorinwindow) forKey:@"editorwindowmode"];
++    NSString * extraFontsDir = [NSString stringWithstdwstring:appManager->GetUserSettings()->Get(L"extra-fonts-folder")];
++    [json_langs setValue:(extraFontsDir ?: @"") forKey:@"extrafontsdir"];
+ 
+ #if defined(OO_BRANDING) && !defined(_V8_VERSION)
+     bool useai = !(appManager->GetUserSettings()->Get(L"disable-ai") == L"1");
+diff --git a/macos/ONLYOFFICE/Code/Controllers/Common/ASCEventsController.mm b/macos/ONLYOFFICE/Code/Controllers/Common/ASCEventsController.mm
+index e2a9e57..bef952f 100644
+--- a/macos/ONLYOFFICE/Code/Controllers/Common/ASCEventsController.mm
++++ b/macos/ONLYOFFICE/Code/Controllers/Common/ASCEventsController.mm
+@@ -681,6 +681,29 @@ virtual void OnEvent(NSEditorApi::CAscCefMenuEvent* pRawEvent)
+                                     pEvent->m_pData = pCommand;
+ 
+                                     CAscApplicationManager * appManager = [NSAscApplicationWorker getAppManager];
++                                    appManager->SetEventToAllMainWindows(pEvent);
++                                }
++                            } else if (param.find(L"extrafontsdir") != std::wstring::npos) {
++                                CAscApplicationManager * appManager = [NSAscApplicationWorker getAppManager];
++                                NSString * currentDir = [[NSString stringWithstdwstring:appManager->GetUserSettings()->Get(L"extra-fonts-folder")] stringByExpandingTildeInPath];
++
++                                NSOpenPanel * openPanel = [NSOpenPanel openPanel];
++                                openPanel.canChooseFiles = NO;
++                                openPanel.canChooseDirectories = YES;
++                                openPanel.allowsMultipleSelection = NO;
++                                BOOL isDir = NO;
++                                if (currentDir.length > 0 && [[NSFileManager defaultManager] fileExistsAtPath:currentDir isDirectory:&isDir] && isDir) {
++                                    openPanel.directoryURL = [NSURL fileURLWithPath:currentDir];
++                                }
++
++                                if ([openPanel runModal] == NSModalResponseOK && openPanel.URL.path.length > 0) {
++                                    NSEditorApi::CAscExecCommandJS * pCommand = new NSEditorApi::CAscExecCommandJS;
++                                    pCommand->put_Command(L"settings:extrafontsdir");
++                                    pCommand->put_Param([openPanel.URL.path stdwstring]);
++
++                                    NSEditorApi::CAscMenuEvent * pEvent = new NSEditorApi::CAscMenuEvent(ASC_MENU_EVENT_TYPE_CEF_EXECUTE_COMMAND_JS);
++                                    pEvent->m_pData = pCommand;
++
+                                     appManager->SetEventToAllMainWindows(pEvent);
+                                 }
+                             }
+@@ -688,12 +711,6 @@ virtual void OnEvent(NSEditorApi::CAscCefMenuEvent* pRawEvent)
+                             if (NSDictionary * json = [[NSString stringWithstdwstring:param] dictionary]) {
+                                 id <ASCExternalDelegate> externalDelegate = [[ASCExternalController shared] delegate];
+ 
+-                                if (externalDelegate && [externalDelegate respondsToSelector:@selector(onAppPreferredLanguage)]) {
+-                                    [[ASCEditorJSVariables instance] setParameter:@"lang" withString:[externalDelegate onAppPreferredLanguage]];
+-                                } else {
+-                                    [[ASCEditorJSVariables instance] setParameter:@"lang" withString:[[[NSLocale currentLocale] objectForKey:NSLocaleLanguageCode] lowercaseString]];
+-                                }
+-                                
+                                 if (NSString * langId = json[@"langid"]) {
+                                     if ( [ASCLinguist appLanguageCode] != langId ) {
+                                         [ASCLinguist setAppLanguageCode:langId];
+@@ -704,6 +721,12 @@ virtual void OnEvent(NSEditorApi::CAscCefMenuEvent* pRawEvent)
+                                     }
+                                 }
+ 
++                                if (externalDelegate && [externalDelegate respondsToSelector:@selector(onAppPreferredLanguage)]) {
++                                    [[ASCEditorJSVariables instance] setParameter:@"lang" withString:[externalDelegate onAppPreferredLanguage]];
++                                } else {
++                                    [[ASCEditorJSVariables instance] setParameter:@"lang" withString:[ASCLinguist appLanguageCode]];
++                                }
++
+                                 if (NSString * userName = json[@"username"]) {
+                                     if ([userName isEqualToString:@""]) {
+                                         [[ASCEditorJSVariables instance] setParameter:@"username" withString:NSFullUserName()];
+@@ -753,7 +776,19 @@ virtual void OnEvent(NSEditorApi::CAscCefMenuEvent* pRawEvent)
+                                 }
+ 
+                                 if ( [json objectForKey:@"spellcheckdetect"] != nil ) {
+-                                    appManager->GetUserSettings()->Set(L"spell-check-input-mode", [json[@"spellcheckdetect"] isEqualToString:@"off"] ? L"0" : L"1");
++                                    NSString * spellDetect = [[json[@"spellcheckdetect"] description] lowercaseString];
++                                    std::wstring spellMode = L"default";
++                                    if ([@[@"off", @"disabled", @"0", @"false"] containsObject:spellDetect])
++                                        spellMode = L"0";
++                                    else if ([@[@"enabled", @"on", @"1", @"true"] containsObject:spellDetect])
++                                        spellMode = L"1";
++                                    appManager->GetUserSettings()->Set(L"spell-check-input-mode", spellMode);
++                                }
++
++                                if ( [json objectForKey:@"extrafontsdir"] != nil ) {
++                                    NSString * extraFonts = [[json[@"extrafontsdir"] description]
++                                        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
++                                    appManager->GetUserSettings()->Set(L"extra-fonts-folder", extraFonts.length > 0 ? [extraFonts stdwstring] : L"default");
+                                 }
+ 
+                                 if ( id country = json[@"country"] ) {
+diff --git a/macos/ONLYOFFICE/main.mm b/macos/ONLYOFFICE/main.mm
+index c058ab4..5311284 100644
+--- a/macos/ONLYOFFICE/main.mm
++++ b/macos/ONLYOFFICE/main.mm
+@@ -94,6 +94,32 @@ int main(int argc, const char * argv[]) {
+     // setup editor fonts directory
+     std::vector<std::wstring> fontsDirectories;
+     fontsDirectories.push_back([[resourcePath stringByAppendingPathComponent:@"login/fonts"] stdwstring]);
++
++    CUserSettings * userSettings = appManager->GetUserSettings();
++    NSString * configuredFontsDir = [[NSString stringWithstdwstring:userSettings->Get(L"extra-fonts-folder")]
++        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
++    delete userSettings;
++
++    auto appendValidFontDir = [&](NSString * candidate) {
++        NSString * trimmed = [candidate stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
++        if (trimmed.length == 0) return NO;
++        NSString * expanded = [trimmed stringByExpandingTildeInPath];
++        BOOL isDir = NO;
++        if ([[NSFileManager defaultManager] fileExistsAtPath:expanded isDirectory:&isDir] && isDir &&
++            [[NSFileManager defaultManager] isReadableFileAtPath:expanded]) {
++            fontsDirectories.push_back([expanded stdwstring]);
++            return YES;
++        }
++        return NO;
++    };
++
++    if (configuredFontsDir.length > 0 && !appendValidFontDir(configuredFontsDir)) {
++        NSArray<NSString *> * parts = [configuredFontsDir componentsSeparatedByCharactersInSet:
++            [NSCharacterSet characterSetWithCharactersInString:@";\n\r"]];
++        for (NSString * part in parts) {
++            appendValidFontDir(part);
++        }
++    }
+     appManager->m_oSettings.additional_fonts_folder = fontsDirectories;
+     
+     NSString * error_page = [resourcePath stringByAppendingPathComponent:@"login/noconnect.html"];
+diff --git a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.strings b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.strings
+index e8dbefa..a176157 100644
+--- a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.strings
++++ b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.strings
+@@ -314,7 +314,7 @@
+ "The installed AI Tools component is incompatible with this version of the application. Please update the AI Tools component to continue." = "已安装的 AI Tools 组件与此版本的应用程序不兼容。现在更新 AI Tools？";
+ 
+ /* No comment provided by engineer. */
+-"Theme already exists. Replace it?" = "主题已存在。是​​否替换？";
++"Theme already exists. Replace it?" = "主题已存在。是否替换？";
+ 
+ /* No comment provided by engineer. */
+ "This file doesn't contain theme" = "此文件不包含主题";
+@@ -362,7 +362,7 @@
+ "Yes" = "是";
+ 
+ /* No comment provided by engineer. */
+-"You have %ld %@ documents with unconfirmed changes. Do you want to review these changes before quitting?" = "您的%1$ld %2$@文档包含未确认的更改。是否要在退出前审阅这些更改？";
++"You have %ld %@ documents with unconfirmed changes. Do you want to review these changes before quitting?" = "您有 %1$ld 个 %2$@ 文档包含未确认的更改。是否要在退出前审阅这些更改？";
+ 
+ /* No comment provided by engineer. */
+ "You have successfully activated %@." = "您已经成功激活%@。";
+@@ -377,8 +377,8 @@
+ "Your changes will be lost if you don’t save them." = "如果不保存，您的更改都将丢失。";
+ 
+ /* No comment provided by engineer. */
+-"Your subscription has expired.\n\nThe program works in the non-activated mode.\n\nNow you can prolong or upgrade your subscription with a discount." = "您的訂閱已過期。\n\n此程式目前以未啟用的模式運作。\n\n現在，您可享有延長或升級訂閱的優惠。";
++"Your subscription has expired.\n\nThe program works in the non-activated mode.\n\nNow you can prolong or upgrade your subscription with a discount." = "您的订阅已过期。\n\n此程序目前以未激活模式运行。\n\n现在您可以优惠续订或升级订阅。";
+ 
+ /* No comment provided by engineer. */
+-"Your subscription is about to expire\n(%d days left).\n\nWe have a special offer for you." = "您的訂閱即將到期\n(剩下 %d 天)。\n\n我們為您提供一項特別優惠。";
++"Your subscription is about to expire\n(%d days left).\n\nWe have a special offer for you." = "您的订阅即将到期\n（剩余 %d 天）。\n\n我们为您提供了一项特别优惠。";
+ 
+diff --git a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.stringsdict b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.stringsdict
+index a013c1b..3692310 100644
+--- a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.stringsdict
++++ b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Localizable.stringsdict
+@@ -5,7 +5,7 @@
+ 	<key>%d days are left until the license expiration.</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@天@</string>
++		<string>%#@days@</string>
+ 		<key>days</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+@@ -20,7 +20,7 @@
+ The trial period will end in %d days, after that you will not be able to create and edit documents.</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@天@</string>
++		<string>%#@days@</string>
+ 		<key>days</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+@@ -28,14 +28,14 @@ The trial period will end in %d days, after that you will not be able to create
+ 			<key>NSStringFormatValueTypeKey</key>
+ 			<string>d</string>
+ 			<key>other</key>
+-			<string>您目前正在使用應用程式的試用版。
+-試用版將在 %d 天後到期，之後，您將無法建立和編輯文件。</string>
++			<string>您目前正在使用应用程序的试用版。
++试用版将在 %d 天后到期，届时您将无法创建和编辑文档。</string>
+ 		</dict>
+ 	</dict>
+ 	<key>You have %ld %@ documents with unconfirmed changes. Do you want to review these changes before quitting?</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@文档@</string>
++		<string>%#@documents@</string>
+ 		<key>documents</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+@@ -43,7 +43,7 @@ The trial period will end in %d days, after that you will not be able to create
+ 			<key>NSStringFormatValueTypeKey</key>
+ 			<string>ld</string>
+ 			<key>other</key>
+-			<string>您的%ld %@文档包含未确认的更改。是否要在退出前审阅这些更改？</string>
++			<string>您有 %ld 个 %@ 文档包含未确认的更改。是否要在退出前审阅这些更改？</string>
+ 		</dict>
+ 	</dict>
+ </dict>
+diff --git a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Main.strings b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Main.strings
+index d57367d..e710aae 100644
+--- a/macos/ONLYOFFICE/zh-Hans-CN.lproj/Main.strings
++++ b/macos/ONLYOFFICE/zh-Hans-CN.lproj/Main.strings
+@@ -98,7 +98,7 @@
+ "AYu-sK-qS6.title" = "主菜单";
+ 
+ /* Class = "NSMenuItem"; title = "\tLeft to Right"; ObjectID = "BgM-ve-c93"; */
+-"BgM-ve-c93.title" = "\t從左至右";
++"BgM-ve-c93.title" = "\t从左到右";
+ 
+ /* Class = "NSMenuItem"; title = "Show Colors"; ObjectID = "bgn-CT-cEk"; */
+ "bgn-CT-cEk.title" = "显示颜色";
+@@ -146,7 +146,7 @@
+ "DOj-j9-dza.title" = "电子表格";
+ 
+ /* Class = "NSMenuItem"; title = "Undo"; ObjectID = "dRJ-4n-Yzg"; */
+-"dRJ-4n-Yzg.title" = "复原";
++"dRJ-4n-Yzg.title" = "撤销";
+ 
+ /* Class = "NSMenuItem"; title = "Spelling and Grammar"; ObjectID = "Dv1-io-Yv7"; */
+ "Dv1-io-Yv7.title" = "拼写和语法";
+@@ -239,7 +239,7 @@
+ "jBQ-r6-VK2.title" = "字距调整";
+ 
+ /* Class = "NSMenuItem"; title = "\tRight to Left"; ObjectID = "jFq-tB-4Kx"; */
+-"jFq-tB-4Kx.title" = "\t從左至右";
++"jFq-tB-4Kx.title" = "\t从右到左";
+ 
+ /* Class = "NSMenuItem"; title = "Format"; ObjectID = "jxT-CU-nIS"; */
+ "jxT-CU-nIS.title" = "格式";
+@@ -254,7 +254,7 @@
+ "Kd2-mp-pUS.title" = "显示全部";
+ 
+ /* Class = "NSMenuItem"; title = "\tLeft to Right"; ObjectID = "Lbh-J2-qVU"; */
+-"Lbh-J2-qVU.title" = "\t從左至右";
++"Lbh-J2-qVU.title" = "\t从左到右";
+ 
+ /* Class = "NSMenuItem"; title = "Bring All to Front"; ObjectID = "LE2-aR-0XJ"; */
+ "LE2-aR-0XJ.title" = "全部置顶";
+@@ -281,7 +281,7 @@
+ "NMo-om-nkz.title" = "服务";
+ 
+ /* Class = "NSMenuItem"; title = "\tDefault"; ObjectID = "Nop-cj-93Q"; */
+-"Nop-cj-93Q.title" = "\t預設";
++"Nop-cj-93Q.title" = "\t默认";
+ 
+ /* Class = "NSMenuItem"; title = "Ligatures"; ObjectID = "o6e-r0-MWq"; */
+ "o6e-r0-MWq.title" = "连字";
+@@ -302,7 +302,7 @@
+ "Olw-nP-bQN.title" = "隐藏ONLYOFFICE";
+ 
+ /* Class = "NSButtonCell"; title = "Open"; ObjectID = "opn-Cl-d03"; */
+-"opn-Cl-d03.title" = "開啟";
++"opn-Cl-d03.title" = "打开";
+ 
+ /* Class = "NSMenuItem"; title = "Find Previous"; ObjectID = "OwM-mh-QMV"; */
+ "OwM-mh-QMV.title" = "查找上一个";
+@@ -335,7 +335,7 @@
+ "R4o-n2-Eq4.title" = "放大";
+ 
+ /* Class = "NSMenuItem"; title = "\tRight to Left"; ObjectID = "RB4-Sm-HuC"; */
+-"RB4-Sm-HuC.title" = "\t從左至右";
++"RB4-Sm-HuC.title" = "\t从右到左";
+ 
+ /* Class = "NSMenuItem"; title = "Check Spelling While Typing"; ObjectID = "rbD-Rh-wIN"; */
+ "rbD-Rh-wIN.title" = "键入时检查拼写";
+@@ -449,7 +449,7 @@
+ "YEy-JH-Tfz.title" = "查找和替换…";
+ 
+ /* Class = "NSMenuItem"; title = "\tDefault"; ObjectID = "YGs-j5-SAR"; */
+-"YGs-j5-SAR.title" = "\t預設";
++"YGs-j5-SAR.title" = "\t默认";
+ 
+ /* Class = "NSMenuItem"; title = "Start Speaking"; ObjectID = "Ynk-f8-cLZ"; */
+ "Ynk-f8-cLZ.title" = "开始朗读";
+diff --git a/macos/ONLYOFFICE/zh-Hant-TW.lproj/Localizable.stringsdict b/macos/ONLYOFFICE/zh-Hant-TW.lproj/Localizable.stringsdict
+index 93355d6..53fdd67 100644
+--- a/macos/ONLYOFFICE/zh-Hant-TW.lproj/Localizable.stringsdict
++++ b/macos/ONLYOFFICE/zh-Hant-TW.lproj/Localizable.stringsdict
+@@ -5,7 +5,7 @@
+ 	<key>%d days are left until the license expiration.</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@天@</string>
++		<string>%#@days@</string>
+ 		<key>days</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+@@ -20,7 +20,7 @@
+ The trial period will end in %d days, after that you will not be able to create and edit documents.</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@天@</string>
++		<string>%#@days@</string>
+ 		<key>days</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+@@ -35,7 +35,7 @@ The trial period will end in %d days, after that you will not be able to create
+ 	<key>You have %ld %@ documents with unconfirmed changes. Do you want to review these changes before quitting?</key>
+ 	<dict>
+ 		<key>NSStringLocalizedFormatKey</key>
+-		<string>%#@文件@</string>
++		<string>%#@documents@</string>
+ 		<key>documents</key>
+ 		<dict>
+ 			<key>NSStringFormatSpecTypeKey</key>
+diff --git a/win-linux/src/cascapplicationmanagerwrapper.cpp b/win-linux/src/cascapplicationmanagerwrapper.cpp
+index 9f27182..cf1c9a7 100644
+--- a/win-linux/src/cascapplicationmanagerwrapper.cpp
++++ b/win-linux/src/cascapplicationmanagerwrapper.cpp
+@@ -2372,7 +2372,13 @@ bool CAscApplicationManagerWrapper::applySettings(const wstring& wstrjson)
+         }
+ 
+         if ( objRoot.contains("spellcheckdetect") ) {
+-            setUserSettings(L"spell-check-input-mode", objRoot["spellcheckdetect"].toString() == "off" ? L"0" : L"default");
++            const QString spellDetect = objRoot["spellcheckdetect"].toString().toLower();
++            std::wstring spellMode = L"default";
++            if ( QStringList({"off", "disabled", "0", "false"}).contains(spellDetect) )
++                spellMode = L"0";
++            else if ( QStringList({"enabled", "on", "1", "true"}).contains(spellDetect) )
++                spellMode = L"1";
++            setUserSettings(L"spell-check-input-mode", spellMode);
+         }
+ 
+         wstring params = QString("lang=%1&username=%3&location=%2")
+diff --git a/win-linux/src/prop/cmainpanelimpl.cpp b/win-linux/src/prop/cmainpanelimpl.cpp
+index e85fb5b..81dabc1 100644
+--- a/win-linux/src/prop/cmainpanelimpl.cpp
++++ b/win-linux/src/prop/cmainpanelimpl.cpp
+@@ -115,7 +115,12 @@ void CMainPanelImpl::refreshAboutVersion()
+ #endif
+ 
+ #ifdef Q_OS_WIN
+-    _json_obj["spellcheckdetect"] = AscAppManager::userSettings(L"spell-check-input-mode") != L"0" ? "auto" : "off";
++    _json_obj["spellcheckdetect"] = [] {
++        const QString mode = QString::fromStdWString(AscAppManager::userSettings(L"spell-check-input-mode")).toLower();
++        if ( QStringList({"0", "false", "off"}).contains(mode) ) return "disabled";
++        if ( QStringList({"1", "true", "on"}).contains(mode) ) return "enabled";
++        return "auto";
++    }();
+ #endif
+ 
+     GET_REGISTRY_USER(reg_user);
+diff --git a/win-linux/src/prop/cmainwindowimpl.cpp b/win-linux/src/prop/cmainwindowimpl.cpp
+index ae2c016..226bcd0 100644
+--- a/win-linux/src/prop/cmainwindowimpl.cpp
++++ b/win-linux/src/prop/cmainwindowimpl.cpp
+@@ -183,7 +183,12 @@ void CMainWindowImpl::refreshAboutVersion()
+     _json_obj["uitheme"] = QString::fromStdWString(GetCurrentTheme().id());
+ #endif
+ 
+-    _json_obj["spellcheckdetect"] = AscAppManager::userSettings(L"spell-check-input-mode") != L"0" ? "auto" : "off";
++    _json_obj["spellcheckdetect"] = [] {
++        const QString mode = QString::fromStdWString(AscAppManager::userSettings(L"spell-check-input-mode")).toLower();
++        if ( QStringList({"0", "false", "off"}).contains(mode) ) return "disabled";
++        if ( QStringList({"1", "true", "on"}).contains(mode) ) return "enabled";
++        return "auto";
++    }();
+ 
+     GET_REGISTRY_USER(reg_user);
+     _json_obj["editorwindowmode"] = reg_user.value("editorWindowMode",false).toBool();
