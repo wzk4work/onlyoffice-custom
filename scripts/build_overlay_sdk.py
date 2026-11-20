@@ -120,9 +120,10 @@ if not os.path.isfile(boost_lib):
     boost.make()
     shutil.rmtree(os.path.join(CORE, "Common", "3dParty", "boost", "boost_1_72_0"), ignore_errors=True)
 
-# 4. Fetch hunspell headers (records.h + hunspell.h)
-hunspell_rec = os.path.join(CORE, "Common", "3dParty", "hunspell", "autogen", "records.h")
-if not os.path.isfile(hunspell_rec):
+# 4. Fetch hunspell sources (autogen/records.h is checked into core, so the
+# real guard is the cloned hunspell repo itself)
+hunspell_hdr = os.path.join(CORE, "Common", "3dParty", "hunspell", "hunspell", "src", "hunspell", "hunspell.h")
+if not os.path.isfile(hunspell_hdr):
     print("== Preparing hunspell headers ==")
     os.chdir(BT)
     hunspell.make(False)
