@@ -31,17 +31,11 @@ jobs:
       - name: Checkout patch repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3 & `python` shim
+      - name: Set up Python 3.11
+        id: py311
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Add `python` shim to PATH
-        run: |
-          mkdir -p "$RUNNER_TEMP/shims"
-          ln -sf "$(which python3)" "$RUNNER_TEMP/shims/python"
-          echo "$RUNNER_TEMP/shims" >> "$GITHUB_PATH"
-          python --version
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -54,15 +48,25 @@ jobs:
           version: "5.15.2"
           cache: true
 
+      - name: Add Python 3.11 `python` shim to front of PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/shims"
+          ln -sf "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python"
+          ln -sf "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python3"
+          echo "$RUNNER_TEMP/shims" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/shims/python" --version
+
       - name: Clone ONLYOFFICE sources (${{ env.OO_TAG }}) & apply patches
         run: |
-          mkdir -p work
-          for repo in build_tools core desktop-sdk desktop-apps; do
-            echo "== Cloning ONLYOFFICE/$repo @ $OO_TAG =="
-            git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/$repo.git" "work/$repo"
-          done
-          echo "== Cloning ONLYOFFICE/web-apps @ $OO_TAG =="
-          git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/web-apps.git" "work/web-apps"
+          echo "== Cloning ONLYOFFICE/DesktopEditors @ $OO_TAG =="
+          git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/DesktopEditors.git" work
+          git -C work submodule update --init --depth 1 core desktop-sdk desktop-apps web-apps
+
+          BT_REF=$(git ls-remote --tags --refs --sort=-v:refname "https://github.com/ONLYOFFICE/build_tools.git" "${OO_TAG}.*" | head -n1 | awk -F/ '{print $NF}')
+          BT_REF="${BT_REF:-master}"
+          echo "== Cloning ONLYOFFICE/build_tools @ $BT_REF =="
+          git clone --depth 1 --branch "$BT_REF" "https://github.com/ONLYOFFICE/build_tools.git" "work/build_tools"
+
           bash scripts/apply_patches.sh "$PWD/work"
 
       - name: Restore cached SDK static dependencies (ICU 74.2 + Boost 1.72 + CryptoPP + CompoundFile)
