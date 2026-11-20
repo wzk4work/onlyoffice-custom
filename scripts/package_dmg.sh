@@ -23,7 +23,7 @@ echo "== Step 2: Build loginpage (addondialog + noconnect + start page) =="
 for sub in addondialog noconnect .; do
   (
     cd "$WORK_DIR/desktop-apps/common/loginpage/$sub"
-    npm ci --no-audit --no-fund
+    npm install --no-audit --no-fund
     npm run build
   )
 done
