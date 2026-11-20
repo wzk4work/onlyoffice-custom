@@ -84,6 +84,9 @@ if not os.path.isfile(os.path.join(icu_out, "libicuuc.a")):
         shutil.rmtree(tmp_clone, ignore_errors=True)
         subprocess.run(["git", "clone", "--depth", "1", "--branch", "release-74-2", "https://github.com/unicode-org/icu.git", tmp_clone], check=True)
         shutil.move(os.path.join(tmp_clone, "icu4c"), icu_src)
+        icu_lic = os.path.join(tmp_clone, "LICENSE")
+        if os.path.isfile(icu_lic):
+            shutil.copy2(icu_lic, os.path.join(icu_src, "LICENSE"))
         shutil.rmtree(tmp_clone, ignore_errors=True)
     pkgdata = os.path.join(icu_src, "source", "tools", "pkgdata", "pkgdata.cpp")
     txt = open(pkgdata, encoding="utf-8").read()
