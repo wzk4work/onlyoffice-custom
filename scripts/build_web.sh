@@ -11,7 +11,9 @@ echo "== Build web-apps =="
 )
 (
   cd "$WORK_DIR/web-apps/build"
-  npm install --no-audit --no-fund
+  # dev deps (grunt-mocha -> phantomjs-prebuilt) have no linux/arm64 binary and
+  # are only used by test tasks we never run — install prod deps only.
+  npm install --omit=dev --no-audit --no-fund
   npx grunt --force
 )
 

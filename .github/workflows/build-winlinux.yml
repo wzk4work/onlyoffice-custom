@@ -215,32 +215,23 @@ jobs:
           arch: win64_msvc2019_64
           cache: true
 
-      - name: Install MSVC v142 toolset (needed by boost/qmake pri)
+      - name: Register msvc-14.2 toolset for Boost.Build (user-config.jam)
         if: matrix.native == '1'
         run: |
           $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest -products '*' -property installationPath
           Write-Host "VS install: $vsPath"
-          & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" modify `
-            --installPath "$vsPath" `
-            --add Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64 `
-            --quiet --wait --norestart
-          "VS_PATH_WIN=$vsPath" | Out-File -Append $env:GITHUB_ENV -Encoding utf8
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+          # boost.py passes --toolset=msvc-14.2 and the pri files link
+          # libboost_*-vc142-*. The library tag comes from the registered
+          # version, not the actual cl.exe, so pointing 14.2 at the default
+          # vcvars64 toolchain (v143/v144, ABI-compatible) is enough.
+          $jam = "$env:USERPROFILE\user-config.jam"
+          "using msvc : 14.2 : : <setup>`"$($vcvars -replace '\\','\\')`" ;" |
+            Out-File -Encoding ascii $jam
+          Get-Content $jam
         shell: pwsh
-
-      - name: Register v142 cl.exe for Boost.Build (user-config.jam)
-        if: matrix.native == '1'
-        run: |
-          VS_UNIX="$(cygpath -u "$VS_PATH_WIN")"
-          CL142="$(find "$VS_UNIX/VC/Tools/MSVC" -name cl.exe -path "*/Hostx64/x64/*" 2>/dev/null | grep "/14.29" | sort -r | head -n1 || true)"
-          [ -n "$CL142" ] || CL142="$(find "$VS_UNIX/VC/Tools/MSVC" -name cl.exe -path "*/Hostx64/x64/*" 2>/dev/null | sort -r | head -n1)"
-          echo "v142 cl: $CL142"
-          VCVARS="$VS_UNIX/VC/Auxiliary/Build/vcvars64.bat"
-          mkdir -p "$USERPROFILE"
-          {
-            echo "using msvc : 14.2 : \"$CL142\" : <setup>\"$VCVARS\" ;"
-          } > "$USERPROFILE/user-config.jam"
-          cat "$USERPROFILE/user-config.jam"
 
       - name: Enable MSVC dev environment
         if: matrix.native == '1'
