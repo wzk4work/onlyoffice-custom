@@ -84,14 +84,16 @@ jobs:
           QMAKE_PATH="$(command -v qmake || find /usr/lib/qt5 /usr/lib/*/qt5 -name qmake -type f 2>/dev/null | head -n1)"
           QT_PREFIX="$(dirname "$(dirname "$QMAKE_PATH")")"
           echo "distro Qt prefix: $QT_PREFIX (qmake: $QMAKE_PATH)"
-          mkdir -p "$RUNNER_TEMP/qt5/gcc_64"
+          # build_tools derives the Qt version from the qt-dir basename, so it must
+          # look like a version (e.g. "5.15.2"), e.g. <qt-dir>/5.15.2/gcc_64
+          QTDIR="$RUNNER_TEMP/Qt/5.15.2/gcc_64"
+          mkdir -p "$QTDIR"
           for d in bin lib include mkspecs plugins translations resources; do
-            [ -e "$QT_PREFIX/$d" ] && ln -sfn "$QT_PREFIX/$d" "$RUNNER_TEMP/qt5/gcc_64/$d"
+            [ -e "$QT_PREFIX/$d" ] && ln -sfn "$QT_PREFIX/$d" "$QTDIR/$d"
           done
-          # qmake may live under lib/qt5 while prefix is /usr — ensure bin resolves
-          [ -e "$RUNNER_TEMP/qt5/gcc_64/bin/qmake" ] || ln -sfn "$(dirname "$QMAKE_PATH")" "$RUNNER_TEMP/qt5/gcc_64/bin"
-          echo "QT_PARENT=$RUNNER_TEMP/qt5" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/qt5/gcc_64/bin/qmake" -query QT_VERSION
+          [ -e "$QTDIR/bin/qmake" ] || ln -sfn "$(dirname "$QMAKE_PATH")" "$QTDIR/bin"
+          echo "QT_PARENT=$RUNNER_TEMP/Qt/5.15.2" >> "$GITHUB_ENV"
+          "$QTDIR/bin/qmake" -query QT_VERSION
 
       - name: Add Python 3.11 `python` shim to front of PATH
         run: |
