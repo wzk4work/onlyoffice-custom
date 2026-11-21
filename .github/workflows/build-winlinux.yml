@@ -177,7 +177,7 @@ jobs:
         include:
           - plat: win_64
             arch: x64
-            runner: windows-latest
+            runner: windows-2022
             zip_name: DesktopEditors_x64.zip
             native: "1"
           - plat: win_arm64
@@ -225,7 +225,7 @@ jobs:
             --installPath "$vsPath" `
             --add Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64 `
             --quiet --wait --norestart
-          Write-Host "VS_PATH_WIN=$vsPath" | Out-File -Append $env:GITHUB_ENV
+          "VS_PATH_WIN=$vsPath" | Out-File -Append $env:GITHUB_ENV -Encoding utf8
         shell: pwsh
 
       - name: Register v142 cl.exe for Boost.Build (user-config.jam)

@@ -694,3 +694,15 @@ index ae2c016..2dd653f 100644
  
      GET_REGISTRY_USER(reg_user);
      _json_obj["editorwindowmode"] = reg_user.value("editorWindowMode",false).toBool();
+diff --git a/win-linux/src/utils.cpp b/win-linux/src/utils.cpp
+index 5e530c9..dfc2b94 100644
+--- a/win-linux/src/utils.cpp
++++ b/win-linux/src/utils.cpp
+@@ -48,6 +48,7 @@
+ #include <QJsonDocument>
+ #include <QJsonObject>
+ #include <QScreen>
++#include <QDesktopWidget>
+ #include <QStorageInfo>
+ #include <QPrinterInfo>
+ #include <QProcess>
