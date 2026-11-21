@@ -548,10 +548,10 @@ index 93355d6..53fdd67 100644
  		<dict>
  			<key>NSStringFormatSpecTypeKey</key>
 diff --git a/win-linux/src/cascapplicationmanagerwrapper.cpp b/win-linux/src/cascapplicationmanagerwrapper.cpp
-index 9f27182..cf1c9a7 100644
+index 9f27182..c2dceb6 100644
 --- a/win-linux/src/cascapplicationmanagerwrapper.cpp
 +++ b/win-linux/src/cascapplicationmanagerwrapper.cpp
-@@ -2372,7 +2372,13 @@ bool CAscApplicationManagerWrapper::applySettings(const wstring& wstrjson)
+@@ -2372,7 +2372,18 @@ bool CAscApplicationManagerWrapper::applySettings(const wstring& wstrjson)
          }
  
          if ( objRoot.contains("spellcheckdetect") ) {
@@ -563,14 +563,73 @@ index 9f27182..cf1c9a7 100644
 +            else if ( QStringList({"enabled", "on", "1", "true"}).contains(spellDetect) )
 +                spellMode = L"1";
 +            setUserSettings(L"spell-check-input-mode", spellMode);
++        }
++
++        if ( objRoot.contains("extrafontsdir") ) {
++            const QString extraFonts = objRoot["extrafontsdir"].toString().trimmed();
++            setUserSettings(L"extra-fonts-folder", extraFonts.isEmpty() ? L"default" : extraFonts.toStdWString());
          }
  
          wstring params = QString("lang=%1&username=%3&location=%2")
+@@ -2445,6 +2456,19 @@ void CAscApplicationManagerWrapper::sendSettings(const wstring& opts)
+         if ( m_pMainWindow && m_pMainWindow->editorsCount() ) {
+             _send_opts = L"has";
+         }
++    } else
++    if ( opts == L"extrafontsdir" ) {
++        QString _cur = QString::fromStdWString(userSettings(L"extra-fonts-folder")).split(';').first().trimmed();
++        if ( _cur == "default" )
++            _cur.clear();
++
++        CFileDialogWrapper dlg(qobject_cast<QWidget *>(parent()));
++        const QString _dir = dlg.selectFolder(_cur.isEmpty() ? QDir::homePath() : _cur);
++        if ( !_dir.isEmpty() )
++            QTimer::singleShot(0, [_dir] {
++                AscAppManager::sendCommandTo(SEND_TO_ALL_START_PAGE, L"settings:extrafontsdir", _dir.toStdWString());
++            });
++        return;
+     }
+ 
+     if ( !_send_opts.empty() )
+diff --git a/win-linux/src/main.cpp b/win-linux/src/main.cpp
+index 987d5bb..29d4add 100644
+--- a/win-linux/src/main.cpp
++++ b/win-linux/src/main.cpp
+@@ -50,6 +50,8 @@
+ #include "chelp.h"
+ #include "common/File.h"
+ #include <QStyleFactory>
++#include <QFileInfo>
++#include <QRegExp>
+ 
+ 
+ int main( int argc, char *argv[] )
+@@ -161,6 +163,20 @@ int main( int argc, char *argv[] )
+     manager.m_oSettings.local_editors_path         = app_path + L"/editors/web-apps/apps/api/documents/index.html";
+     manager.m_oSettings.system_templates_path      = app_path  + L"/converter/templates";
+     manager.m_oSettings.additional_fonts_folder.push_back(app_path + L"/fonts");
++    {
++        const std::wstring extraFonts = AscAppManager::userSettings(L"extra-fonts-folder");
++        if ( !extraFonts.empty() && extraFonts != L"default" ) {
++            const QStringList dirs = QString::fromStdWString(extraFonts)
++                    .split(QRegExp("[;\\n]"), QString::SkipEmptyParts);
++            for ( const QString &p : dirs ) {
++                QString dir = p.trimmed();
++                if ( dir.startsWith(QLatin1Char('~')) )
++                    dir.replace(0, 1, QDir::homePath());
++                if ( QFileInfo(dir).isDir() )
++                    manager.m_oSettings.additional_fonts_folder.push_back(dir.toStdWString());
++            }
++        }
++    }
+     manager.m_oSettings.country = Utils::systemLocationCode().toStdString();
+     manager.m_oSettings.connection_error_path      = app_path + L"/editors/webext/noconnect.html";
+ 
 diff --git a/win-linux/src/prop/cmainpanelimpl.cpp b/win-linux/src/prop/cmainpanelimpl.cpp
-index e85fb5b..81dabc1 100644
+index e85fb5b..94452d1 100644
 --- a/win-linux/src/prop/cmainpanelimpl.cpp
 +++ b/win-linux/src/prop/cmainpanelimpl.cpp
-@@ -115,7 +115,12 @@ void CMainPanelImpl::refreshAboutVersion()
+@@ -115,9 +115,19 @@ void CMainPanelImpl::refreshAboutVersion()
  #endif
  
  #ifdef Q_OS_WIN
@@ -583,12 +642,19 @@ index e85fb5b..81dabc1 100644
 +    }();
  #endif
  
++    {
++        const QString extraFonts = QString::fromStdWString(AscAppManager::userSettings(L"extra-fonts-folder"));
++        _json_obj["extrafontsdir"] = extraFonts == "default" ? QString() : extraFonts;
++    }
++
      GET_REGISTRY_USER(reg_user);
+     _json_obj["editorwindowmode"] = reg_user.value("editorWindowMode",false).toBool();
+ #ifdef Q_OS_WIN
 diff --git a/win-linux/src/prop/cmainwindowimpl.cpp b/win-linux/src/prop/cmainwindowimpl.cpp
-index ae2c016..226bcd0 100644
+index ae2c016..2dd653f 100644
 --- a/win-linux/src/prop/cmainwindowimpl.cpp
 +++ b/win-linux/src/prop/cmainwindowimpl.cpp
-@@ -183,7 +183,12 @@ void CMainWindowImpl::refreshAboutVersion()
+@@ -183,7 +183,17 @@ void CMainWindowImpl::refreshAboutVersion()
      _json_obj["uitheme"] = QString::fromStdWString(GetCurrentTheme().id());
  #endif
  
@@ -599,6 +665,11 @@ index ae2c016..226bcd0 100644
 +        if ( QStringList({"1", "true", "on"}).contains(mode) ) return "enabled";
 +        return "auto";
 +    }();
++
++    {
++        const QString extraFonts = QString::fromStdWString(AscAppManager::userSettings(L"extra-fonts-folder"));
++        _json_obj["extrafontsdir"] = extraFonts == "default" ? QString() : extraFonts;
++    }
  
      GET_REGISTRY_USER(reg_user);
      _json_obj["editorwindowmode"] = reg_user.value("editorWindowMode",false).toBool();

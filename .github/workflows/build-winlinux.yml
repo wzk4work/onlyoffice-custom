@@ -1,0 +1,319 @@
+name: Build ONLYOFFICE Win & Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      oo_tag:
+        description: "Upstream ONLYOFFICE release tag"
+        required: true
+        default: "v10.0.0"
+        type: string
+      publish_release:
+        description: "Publish/update GitHub Release with built packages"
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  OO_TAG: ${{ github.event.inputs.oo_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v10.0.0' }}
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - plat: linux_64
+            arch: x86_64
+            runner: ubuntu-24.04
+            deb_name: onlyoffice-desktopeditors_amd64.deb
+            rpm_name: onlyoffice-desktopeditors.x86_64.rpm
+            ai_name: DesktopEditors-x86_64.AppImage
+            tar_name: onlyoffice-desktopeditors-x64.tar.xz
+            qt_mode: aqt
+          - plat: linux_arm64
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            deb_name: onlyoffice-desktopeditors_arm64.deb
+            rpm_name: onlyoffice-desktopeditors.aarch64.rpm
+            ai_name: DesktopEditors-arm64.AppImage
+            tar_name: onlyoffice-desktopeditors-aarch64.tar.xz
+            qt_mode: distro
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        id: py311
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential rpm cpio rsync curl git p7zip-full libglib2.0-dev libgtk-3-dev libnss3-dev libasound2-dev libxss-dev libxtst-dev fakeroot
+
+      - name: Install Qt 5.15.2 via aqt (x86_64)
+        if: matrix.qt_mode == 'aqt'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          arch: gcc_64
+          cache: true
+
+      - name: Install distro Qt5 (arm64)
+        if: matrix.qt_mode == 'distro'
+        run: |
+          sudo apt-get install -y qtbase5-dev qtbase5-dev-tools qttools5-dev
+          QMAKE_PATH="$(command -v qmake || find /usr/lib/qt5 /usr/lib/*/qt5 -name qmake -type f 2>/dev/null | head -n1)"
+          QT_PREFIX="$(dirname "$(dirname "$QMAKE_PATH")")"
+          echo "distro Qt prefix: $QT_PREFIX (qmake: $QMAKE_PATH)"
+          mkdir -p "$RUNNER_TEMP/qt5/gcc_64"
+          for d in bin lib include mkspecs plugins translations resources; do
+            [ -e "$QT_PREFIX/$d" ] && ln -sfn "$QT_PREFIX/$d" "$RUNNER_TEMP/qt5/gcc_64/$d"
+          done
+          # qmake may live under lib/qt5 while prefix is /usr — ensure bin resolves
+          [ -e "$RUNNER_TEMP/qt5/gcc_64/bin/qmake" ] || ln -sfn "$(dirname "$QMAKE_PATH")" "$RUNNER_TEMP/qt5/gcc_64/bin"
+          echo "QT_PARENT=$RUNNER_TEMP/qt5" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/qt5/gcc_64/bin/qmake" -query QT_VERSION
+
+      - name: Add Python 3.11 `python` shim to front of PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/shims"
+          ln -sf "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python"
+          ln -sf "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python3"
+          echo "$RUNNER_TEMP/shims" >> "$GITHUB_PATH"
+
+      - name: Clone ONLYOFFICE sources (${{ env.OO_TAG }}) & apply patches
+        run: |
+          echo "== Cloning ONLYOFFICE/DesktopEditors @ $OO_TAG =="
+          git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/DesktopEditors.git" work
+          git -C work submodule update --init --depth 1 core desktop-sdk desktop-apps web-apps
+
+          BT_REF=$(git ls-remote --tags --refs --sort=-v:refname "https://github.com/ONLYOFFICE/build_tools.git" "${OO_TAG}.*" | head -n1 | awk -F/ '{print $NF}')
+          BT_REF="${BT_REF:-master}"
+          echo "== Cloning ONLYOFFICE/build_tools @ $BT_REF =="
+          git clone --depth 1 --branch "$BT_REF" "https://github.com/ONLYOFFICE/build_tools.git" "work/build_tools"
+
+          bash scripts/apply_patches.sh "$PWD/work"
+
+      - name: Restore cached static dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/core/Common/3dParty/icu/${{ matrix.plat }}/build
+            work/core/Common/3dParty/boost/build/${{ matrix.plat }}
+            work/core/Common/3dParty/hunspell/hunspell
+            work/core/Common/3dParty/hunspell/autogen
+            work/core/build/lib/${{ matrix.plat }}/libCryptoPPLib.*
+            work/core/build/lib/${{ matrix.plat }}/libCompoundFileLib.*
+            work/core/build/lib/${{ matrix.plat }}/CryptoPPLib.*
+            work/core/build/lib/${{ matrix.plat }}/CompoundFileLib.*
+          key: oo-deps-${{ matrix.plat }}-${{ env.OO_TAG }}-v1
+
+      - name: Download official Linux packages (${{ matrix.arch }})
+        run: |
+          mkdir -p "$RUNNER_TEMP/official"
+          BASE="https://github.com/ONLYOFFICE/DesktopEditors/releases/download/${OO_TAG}"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/official/official.deb"      "$BASE/${{ matrix.deb_name }}"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/official/official.rpm"      "$BASE/${{ matrix.rpm_name }}"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/official/official.AppImage" "$BASE/${{ matrix.ai_name }}"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/official/official.tar.xz"   "$BASE/${{ matrix.tar_name }}"
+          ls -lh "$RUNNER_TEMP/official"
+
+      - name: Extract deb tree (link staging base)
+        run: |
+          mkdir -p "$RUNNER_TEMP/deb_tree"
+          dpkg-deb -x "$RUNNER_TEMP/official/official.deb" "$RUNNER_TEMP/deb_tree"
+          APPDIR="$(find "$RUNNER_TEMP/deb_tree" -type f -name DesktopEditors | head -n1 | xargs dirname)"
+          echo "APPDIR=$APPDIR" >> "$GITHUB_ENV"
+          ls "$APPDIR" | head -30
+
+      - name: Build overlay native components (${{ matrix.plat }})
+        run: |
+          QT_P="${QT_PARENT:-$(dirname "$QT_ROOT_DIR")}"
+          python3 -u scripts/build_overlay_desktop.py "$PWD/work" "$APPDIR" "$QT_P" "${{ matrix.plat }}"
+
+      - name: Build web-apps + loginpage
+        run: bash scripts/build_web.sh "$PWD/work"
+
+      - name: Package deb / rpm / AppImage / tar.xz
+        run: |
+          bash scripts/package_linux.sh "$PWD/work" "$RUNNER_TEMP/official" "$PWD/artifacts" "$OO_TAG" "${{ matrix.plat }}" "${{ matrix.arch }}"
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ONLYOFFICE-${{ env.OO_TAG }}-linux-${{ matrix.arch }}-custom
+          path: |
+            artifacts/*.deb*
+            artifacts/*.rpm*
+            artifacts/*.AppImage*
+            artifacts/*.tar.xz*
+          retention-days: 30
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - plat: win_64
+            arch: x64
+            runner: windows-latest
+            zip_name: DesktopEditors_x64.zip
+            native: "1"
+          - plat: win_arm64
+            arch: arm64
+            runner: windows-latest
+            zip_name: DesktopEditors_arm64.zip
+            native: "0"
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        id: py311
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Qt 5.15.2 (msvc2019_64)
+        if: matrix.native == '1'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          arch: win64_msvc2019_64
+          cache: true
+
+      - name: Enable MSVC dev environment
+        if: matrix.native == '1'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Clone ONLYOFFICE sources (${{ env.OO_TAG }}) & apply patches
+        run: |
+          git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/DesktopEditors.git" work
+          git -C work submodule update --init --depth 1 core desktop-sdk desktop-apps web-apps
+
+          BT_REF=$(git ls-remote --tags --refs --sort=-v:refname "https://github.com/ONLYOFFICE/build_tools.git" "${OO_TAG}.*" | head -n1 | awk -F/ '{print $NF}')
+          BT_REF="${BT_REF:-master}"
+          git clone --depth 1 --branch "$BT_REF" "https://github.com/ONLYOFFICE/build_tools.git" "work/build_tools"
+
+          bash scripts/apply_patches.sh "$PWD/work"
+
+          # VS2022 runner has toolset v143 only; upstream icu.py hardcodes v142
+          sed -i 's/platformToolset = "v142"/platformToolset = "v143"/' work/build_tools/scripts/core_common/modules/icu.py
+
+      - name: Restore cached static dependencies
+        if: matrix.native == '1'
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/core/Common/3dParty/icu/${{ matrix.plat }}/build
+            work/core/Common/3dParty/boost/build/${{ matrix.plat }}
+            work/core/Common/3dParty/hunspell/hunspell
+            work/core/Common/3dParty/hunspell/autogen
+            work/core/build/lib/${{ matrix.plat }}/CryptoPPLib.*
+            work/core/build/lib/${{ matrix.plat }}/CompoundFileLib.*
+            work/core/Common/3dParty/cef/${{ matrix.plat }}/build
+          key: oo-deps-${{ matrix.plat }}-${{ env.OO_TAG }}-v1
+
+      - name: Download official Windows zip (${{ matrix.arch }})
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/official.zip" \
+            "https://github.com/ONLYOFFICE/DesktopEditors/releases/download/${OO_TAG}/${{ matrix.zip_name }}"
+          ls -lh "$RUNNER_TEMP/official.zip"
+
+      - name: Extract zip (link staging base)
+        if: matrix.native == '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/zip_tree"
+          unzip -q "$RUNNER_TEMP/official.zip" -d "$RUNNER_TEMP/zip_tree"
+          APPDIR="$(find "$RUNNER_TEMP/zip_tree" -type f -name "editors.exe" | head -n1 | xargs dirname)"
+          [ -n "$APPDIR" ] || APPDIR="$(find "$RUNNER_TEMP/zip_tree" -type f -name "DesktopEditors.exe" | head -n1 | xargs dirname)"
+          echo "APPDIR=$APPDIR" >> "$GITHUB_ENV"
+          ls "$APPDIR" | head -30
+
+      - name: Build overlay native components (${{ matrix.plat }})
+        if: matrix.native == '1'
+        run: |
+          QT_P="$(dirname "$QT_ROOT_DIR")"
+          VS_PATH="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build"
+          python -u scripts/build_overlay_desktop.py "$PWD/work" "$APPDIR" "$QT_P" "${{ matrix.plat }}" "$VS_PATH"
+
+      - name: Build web-apps + loginpage
+        run: |
+          mkdir -p "$RUNNER_TEMP/shims"
+          cp -f "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python.exe"
+          cp -f "${{ steps.py311.outputs.python-path }}" "$RUNNER_TEMP/shims/python"
+          export PATH="$RUNNER_TEMP/shims:$PATH"
+          bash scripts/build_web.sh "$PWD/work"
+
+      - name: Package Windows zip
+        run: |
+          bash scripts/package_win.sh "$PWD/work" "$RUNNER_TEMP/official.zip" "$PWD/artifacts" "$OO_TAG" "${{ matrix.plat }}" "${{ matrix.arch }}" "${{ matrix.native }}"
+
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ONLYOFFICE-${{ env.OO_TAG }}-win-${{ matrix.arch }}-custom
+          path: |
+            artifacts/*.zip*
+          retention-days: 30
+
+  publish:
+    needs: [linux, windows]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ONLYOFFICE-${{ env.OO_TAG }}-*-custom
+          merge-multiple: true
+          path: artifacts
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -lh artifacts/
+          REL_TAG="${OO_TAG}-custom"
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            REL_TAG="${GITHUB_REF_NAME}"
+          fi
+          if gh release view "$REL_TAG" >/dev/null 2>&1; then
+            gh release upload "$REL_TAG" artifacts/* --clobber
+          else
+            gh release create "$REL_TAG" artifacts/* \
+              --title "ONLYOFFICE ${OO_TAG} Custom (Win/Linux/macOS)" \
+              --notes "ONLYOFFICE Desktop Editors ${OO_TAG} 定制增强版。详见 README。"
+          fi
