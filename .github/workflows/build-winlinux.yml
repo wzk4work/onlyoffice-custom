@@ -120,6 +120,7 @@ jobs:
         with:
           path: |
             work/core/Common/3dParty/icu/${{ matrix.plat }}/build
+            work/core/Common/3dParty/icu/icu/include
             work/core/Common/3dParty/boost/build/${{ matrix.plat }}
             work/core/Common/3dParty/hunspell/hunspell
             work/core/Common/3dParty/hunspell/autogen
@@ -259,6 +260,7 @@ jobs:
         with:
           path: |
             work/core/Common/3dParty/icu/${{ matrix.plat }}/build
+            work/core/Common/3dParty/icu/icu/include
             work/core/Common/3dParty/boost/build/${{ matrix.plat }}
             work/core/Common/3dParty/hunspell/hunspell
             work/core/Common/3dParty/hunspell/autogen

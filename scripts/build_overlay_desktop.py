@@ -261,12 +261,12 @@ if IS_LINUX:
                 shutil.copy2(src, os.path.join(icu_out, lib + ".so.74"))
         shutil.rmtree(build_dir, ignore_errors=True)
         shutil.rmtree(install_dir, ignore_errors=True)
-        shutil.rmtree(icu_src, ignore_errors=True)
 elif IS_WIN:
     icu_out = os.path.join(icu_root, PLAT, "build")
+    # headers are needed by ascdocumentscore even when the libs are cached
+    icu_src_dir()
     if not os.path.isfile(os.path.join(icu_out, "icuuc.lib")):
         print("== Building ICU 74.2 (win_64, MSBuild) ==")
-        icu_src_dir()
         os.chdir(BT)
         import icu
         icu.make()
