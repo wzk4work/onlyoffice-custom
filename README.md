@@ -1,12 +1,12 @@
 # onlyoffice-custom
 
-ONLYOFFICE Desktop Editors 定制优化补丁集与 GitHub Actions 自动打包仓库（当前已支持 macOS `x86_64` 与 `arm64` 自动构建发布，仓库结构按跨平台子模块补丁组织，后续可直接扩展 Windows / Linux 构建工作流）。
+ONLYOFFICE Desktop Editors 定制优化补丁集与 GitHub Actions 自动打包仓库（已支持 macOS `x86_64`/`arm64`、Windows `x64`/`arm64`、Linux `x86_64`/`aarch64` 自动构建发布）。
 
 基于上游官方发行版采用**增量叠加构建（Overlay Build）**：不重编庞大的 `core` 内核（直接复用同版本官方安装包中的 `x2t`、`converter` 动态库、`CEF` 与界面资源），仅对修改涉及的 `desktop-sdk`、`desktop-apps`、`web-apps` 打补丁重编并重新打包。
 
 ## 功能与修复清单
 
-1. **可配置的「自定义字体目录」**（`设置 → 常规 → 自定义字体目录 *`）
+1. **可配置的「自定义字体目录」**（`设置 → 常规 → 自定义字体目录 *`，macOS / Windows / Linux 均已支持）
    - 无任何硬编码私人路径；仅加载用户在设置项中明确配置的目录（支持 `~/...` 展开及 `;` 分隔多个目录，留空则仅使用系统与内置字体，变更后自动重建字体缓存）。
    - 支持直接输入路径或点击右侧 **「浏览」** 调用原生文件夹选择框。
 2. **简体中文界面修正**
@@ -21,19 +21,48 @@ ONLYOFFICE Desktop Editors 定制优化补丁集与 GitHub Actions 自动打包�
 
 ## 下载与安装
 
-1. 前往本仓库 [**Releases**](../../releases) 按芯片下载最新的 DMG：Intel 芯片选 `ONLYOFFICE-v*-macos-x86_64-custom.dmg`，Apple Silicon（M 系列）选 `ONLYOFFICE-v*-macos-arm64-custom.dmg`。
-2. 打开 DMG 将 `ONLYOFFICE.app` 拖入 `/Applications`。
-3. 因采用本地 ad-hoc 签名（未做 Apple 公证），首次打开若提示无法验证开发者，在终端执行一次：
+前往本仓库 [**Releases**](../../releases/latest) 按平台下载（每个文件附带 `.sha256` 校验）：
+
+| 平台 | 架构 | 文件 |
+| --- | --- | --- |
+| macOS | Intel | `ONLYOFFICE-v*-macos-x86_64-custom.dmg` |
+| macOS | Apple Silicon | `ONLYOFFICE-v*-macos-arm64-custom.dmg` |
+| Windows | x64 | `DesktopEditors-*-custom_x64.zip` |
+| Windows | ARM64 | `DesktopEditors-*-custom_arm64.zip` |
+| Linux | x86_64 | `onlyoffice-desktopeditors-*-custom_amd64.deb` / `.x86_64.rpm` / `DesktopEditors-*-custom-x86_64.AppImage` |
+| Linux | ARM64 | `onlyoffice-desktopeditors-*-custom_arm64.deb` / `.aarch64.rpm` / `DesktopEditors-*-custom-aarch64.AppImage` |
+
+补充：Linux 两架构另提供 `*-custom-*.tar.xz` 免安装压缩包。
+
+### macOS
+
+1. 打开 DMG 将 `ONLYOFFICE.app` 拖入 `/Applications`。
+2. 因采用本地 ad-hoc 签名（未做 Apple 公证），首次打开若提示无法验证开发者，在终端执行一次：
    ```sh
    xattr -cr /Applications/ONLYOFFICE.app
    ```
-4. 如需加载额外字体目录，启动后进入 **设置 → 常规 → 自定义字体目录 \*** 选择文件夹并点击「应用」重启即可。
+
+### Windows
+
+解压 zip 后运行其中的 `DesktopEditors.exe`（便携目录形式，免安装）。
+
+### Linux
+
+- Debian/Ubuntu：`sudo dpkg -i onlyoffice-desktopeditors-*-custom_*.deb && sudo apt -f install`
+- Fedora/RHEL：`sudo rpm -i onlyoffice-desktopeditors-*-custom.*.rpm`
+- AppImage：`chmod +x DesktopEditors-*-custom-*.AppImage && ./DesktopEditors-*-custom-*.AppImage`
+
+### 自定义字体目录
+
+如需加载额外字体目录，启动后进入 **设置 → 常规 → 自定义字体目录 \*** 选择文件夹并点击「应用」重启即可。
 
 ## 使用 GitHub Actions 自动构建 / 升级新版本
 
-1. 打开仓库 **Actions → Build ONLYOFFICE macOS → Run workflow**。
-2. 填入上游版本号（如 `v10.0.0`，未来上游发布新版时填 `v10.1.0` 等），勾选 `publish_release` 点击运行。
-3. 流水线按 matrix 并行构建 Intel（`macos-15-intel`）与 Apple Silicon（`macos-15`）两个架构：自动拉取对应 Tag 源码、应用 `patches/*.patch`（开启 `--3way` 三方合并）、编译增量模块并产出两份 `.dmg` 一并发布到 Releases。
+1. 打开仓库 **Actions**，选择对应工作流点击 **Run workflow**：
+   - `Build ONLYOFFICE macOS`：matrix 并行构建 Intel（`macos-15-intel`）与 Apple Silicon（`macos-15`），产出 `.dmg`。
+   - `Build ONLYOFFICE Win & Linux`：matrix 并行构建 4 个目标——Linux x64/arm64（`deb` + `rpm` + `AppImage` + `tar.xz`）与 Windows x64（原生编译重打包 `zip`）/ Windows ARM64（官方包叠加前端与资源补丁重打包 `zip`）。
+2. 填入上游版本号（如 `v10.0.0`，未来上游发布新版时填 `v10.1.0` 等），勾选 `publish_release` 运行。
+3. 流水线自动拉取对应 Tag 源码、应用 `patches/*.patch`（`--3way` 三方合并）、编译增量模块并产出安装包，统一直至全部 matrix 成功后由独立 `publish` 任务发布到 Releases。
    - 若未来某次上游版本升级导致某个补丁报冲突，只需按需浅克隆冲突的单个子仓库（如 `git clone --depth 1 --branch v10.1.0 https://github.com/ONLYOFFICE/desktop-apps.git`），解决冲突后导出更新对应的 `patches/*.patch` 即可。
 
 ## 许可证
