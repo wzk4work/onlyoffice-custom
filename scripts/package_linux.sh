@@ -102,6 +102,10 @@ AI_ROOT="$AI_TREE/squashfs-root"
 AI_APPDIR="$(find_appdir "$AI_ROOT")"
 [ -n "$AI_APPDIR" ] || { echo "ERROR: app dir not found in AppImage"; exit 1; }
 rsync -a --delete "$APPDIR/" "$AI_APPDIR/"
+# unsquashfs preserves 0700 dirs from the official image; appimagetool
+# refuses to package an AppDir that other users can't read/execute.
+chmod -R a+rX "$AI_ROOT"
+chmod a+rx "$AI_ROOT/AppRun" 2>/dev/null || true
 
 TOOL_ARCH="$ARCH"
 APPIMAGETOOL="$EX/appimagetool-$TOOL_ARCH.AppImage"
