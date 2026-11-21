@@ -63,12 +63,12 @@ rm -rf "$OBJ_DIR"
 mkdir -p "$OBJ_DIR"
 
 INC_FILE="$OBJ_DIR/includes.txt"
-while IFS= read -r line; do
-  if [ "$line" = "-I" ]; then
-    echo "-I"
-  else
-    echo "$WORK_DIR/$line"
+inc_prev=""
+while IFS= read -r line || [ -n "$line" ]; do
+  if [ "$inc_prev" = "-I" ]; then
+    echo "-I$WORK_DIR/$line"
   fi
+  inc_prev="$line"
 done < "$REPO_ROOT/config/macos_includes.txt" > "$INC_FILE"
 
 SRC_FILE="$OBJ_DIR/srcs.txt"
@@ -80,6 +80,7 @@ cat > "$OBJ_DIR/compile_one.sh" <<HELPER
 #!/usr/bin/env bash
 set -e
 s="\$1"
+echo "  CC \$s"
 b=\$(basename "\$s")
 o="$OBJ_DIR/\${b%.m*}.o"
 ARC=(-fobjc-arc)
