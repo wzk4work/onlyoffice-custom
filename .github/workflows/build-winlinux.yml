@@ -218,19 +218,24 @@ jobs:
       - name: Install MSVC v142 toolset (needed by boost/qmake pri)
         if: matrix.native == '1'
         run: |
+          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products '*' -property installationPath
+          Write-Host "VS install: $vsPath"
           & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" modify `
-            --installPath "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" `
+            --installPath "$vsPath" `
             --add Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64 `
             --quiet --wait --norestart
+          Write-Host "VS_PATH_WIN=$vsPath" | Out-File -Append $env:GITHUB_ENV
         shell: pwsh
 
       - name: Register v142 cl.exe for Boost.Build (user-config.jam)
         if: matrix.native == '1'
         run: |
-          MSVC_DIR="/c/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC"
-          CL142="$(find "$MSVC_DIR" -maxdepth 4 -name cl.exe -path "*/Hostx64/x64/*" | grep "/14.29" | sort -r | head -n1)"
+          VS_UNIX="$(cygpath -u "$VS_PATH_WIN")"
+          CL142="$(find "$VS_UNIX/VC/Tools/MSVC" -maxdepth 4 -name cl.exe -path "*/Hostx64/x64/*" 2>/dev/null | grep "/14.29" | sort -r | head -n1)"
+          [ -n "$CL142" ] || CL142="$(find "$VS_UNIX/VC/Tools/MSVC" -maxdepth 4 -name cl.exe -path "*/Hostx64/x64/*" 2>/dev/null | sort -r | head -n1)"
           echo "v142 cl: $CL142"
-          VCVARS="$(find "/c/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build" -name vcvars64.bat | head -n1)"
+          VCVARS="$VS_UNIX/VC/Auxiliary/Build/vcvars64.bat"
           mkdir -p "$USERPROFILE"
           {
             echo "using msvc : 14.2 : \"$CL142\" : <setup>\"$VCVARS\" ;"
