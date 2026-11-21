@@ -224,6 +224,19 @@ jobs:
             --quiet --wait --norestart
         shell: pwsh
 
+      - name: Register v142 cl.exe for Boost.Build (user-config.jam)
+        if: matrix.native == '1'
+        run: |
+          MSVC_DIR="/c/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC"
+          CL142="$(find "$MSVC_DIR" -maxdepth 4 -name cl.exe -path "*/Hostx64/x64/*" | grep "/14.29" | sort -r | head -n1)"
+          echo "v142 cl: $CL142"
+          VCVARS="$(find "/c/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build" -name vcvars64.bat | head -n1)"
+          mkdir -p "$USERPROFILE"
+          {
+            echo "using msvc : 14.2 : \"$CL142\" : <setup>\"$VCVARS\" ;"
+          } > "$USERPROFILE/user-config.jam"
+          cat "$USERPROFILE/user-config.jam"
+
       - name: Enable MSVC dev environment
         if: matrix.native == '1'
         uses: ilammy/msvc-dev-cmd@v1
