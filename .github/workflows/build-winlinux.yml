@@ -219,6 +219,8 @@ jobs:
 
       - name: Clone ONLYOFFICE sources (${{ env.OO_TAG }}) & apply patches
         run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
           git clone --depth 1 --branch "$OO_TAG" "https://github.com/ONLYOFFICE/DesktopEditors.git" work
           git -C work submodule update --init --depth 1 core desktop-sdk desktop-apps web-apps
 

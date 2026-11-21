@@ -235,13 +235,18 @@ if IS_LINUX:
     icu_out = os.path.join(icu_root, PLAT, "build")
     if not os.path.isfile(os.path.join(icu_out, "libicuuc.so.74")):
         print(f"== Building ICU 74.2 shared ({PLAT}) ==")
+        # build_tools ships a prebuilt x86_64 python that icu's configure may pick
+        # up via PATH injection — remove it so the system python is used instead
+        bundled_py = os.path.join(BT, "tools", "linux", "python3")
+        if os.path.isdir(bundled_py):
+            shutil.rmtree(bundled_py, ignore_errors=True)
         icu_src = icu_src_dir()
         build_dir = os.path.join(icu_root, PLAT + "_work")
         install_dir = os.path.join(icu_root, PLAT + "_install")
         shutil.rmtree(build_dir, ignore_errors=True)
         shutil.rmtree(install_dir, ignore_errors=True)
         os.makedirs(build_dir, exist_ok=True)
-        env = dict(os.environ, CFLAGS="-fPIC", CXXFLAGS="-fPIC")
+        env = dict(os.environ, CFLAGS="-fPIC", CXXFLAGS="-fPIC", CC="gcc", CXX="g++")
         run([os.path.join(icu_src, "source", "runConfigureICU"), "Linux",
              f"--prefix={install_dir}"], cwd=build_dir, env=env)
         # -static-libstdc++/-static-libgcc like upstream
