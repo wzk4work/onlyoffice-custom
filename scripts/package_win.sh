@@ -16,11 +16,11 @@ rm -rf "$EX"; mkdir -p "$EX"
 
 echo "== Extract official zip =="
 unzip -q "$OFFICIAL_ZIP" -d "$EX/root"
-APPDIR="$(find "$EX/root" -type f -name "editors.exe" | head -n1 | xargs dirname)"
-if [ -z "$APPDIR" ]; then
-  APPDIR="$(find "$EX/root" -type f -name "DesktopEditors.exe" | head -n1 | xargs dirname)"
+APPDIR="$(dirname "$(find "$EX/root" -type f -name "editors.exe" | head -n1)")"
+if [ ! -d "$APPDIR" ]; then
+  APPDIR="$(dirname "$(find "$EX/root" -type f -name "DesktopEditors.exe" | head -n1)")"
 fi
-[ -n "$APPDIR" ] || { echo "ERROR: app dir not found in zip"; exit 1; }
+[ -d "$APPDIR" ] || { echo "ERROR: app dir not found in zip"; exit 1; }
 echo "   app dir: $APPDIR"
 
 if [ "$NATIVE" = "1" ]; then

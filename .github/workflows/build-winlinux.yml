@@ -141,7 +141,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/deb_tree"
           dpkg-deb -x "$RUNNER_TEMP/official/official.deb" "$RUNNER_TEMP/deb_tree"
-          APPDIR="$(find "$RUNNER_TEMP/deb_tree" -type f -name DesktopEditors | head -n1 | xargs dirname)"
+          APPDIR="$(dirname "$(find "$RUNNER_TEMP/deb_tree" -type f -name DesktopEditors | head -n1)")"
           echo "APPDIR=$APPDIR" >> "$GITHUB_ENV"
           ls "$APPDIR" | head -30
 
@@ -258,8 +258,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/zip_tree"
           unzip -q "$RUNNER_TEMP/official.zip" -d "$RUNNER_TEMP/zip_tree"
-          APPDIR="$(find "$RUNNER_TEMP/zip_tree" -type f -name "editors.exe" | head -n1 | xargs dirname)"
-          [ -n "$APPDIR" ] || APPDIR="$(find "$RUNNER_TEMP/zip_tree" -type f -name "DesktopEditors.exe" | head -n1 | xargs dirname)"
+          APPDIR="$(dirname "$(find "$RUNNER_TEMP/zip_tree" -type f -name "editors.exe" | head -n1)")"
+          [ "$APPDIR" != "." ] || APPDIR="$(dirname "$(find "$RUNNER_TEMP/zip_tree" -type f -name "DesktopEditors.exe" | head -n1)")"
           echo "APPDIR=$APPDIR" >> "$GITHUB_ENV"
           ls "$APPDIR" | head -30
 

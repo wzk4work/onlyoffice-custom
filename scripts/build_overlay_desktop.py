@@ -222,12 +222,8 @@ def icu_src_dir():
         if os.path.isfile(icu_lic):
             shutil.copy2(icu_lic, os.path.join(icu_src, "LICENSE"))
         shutil.rmtree(tmp_clone, ignore_errors=True)
-    # pkgdata argv fix (same as macOS overlay)
-    pkgdata = os.path.join(icu_src, "source", "tools", "pkgdata", "pkgdata.cpp")
-    txt = open(pkgdata, encoding="utf-8").read()
-    patched = txt.replace('cmd, "%s %s -o %s%s %s %s%s %s %s",', 'cmd, "%s %s -o %s%s %s %s %s %s %s",')
-    if patched != txt:
-        open(pkgdata, "w", encoding="utf-8").write(patched)
+    # NOTE: do NOT apply the macOS pkgdata %s-split fix here — on linux the
+    # original "…%s%s…" template correctly produces "-Wl,-soname -Wl,libX.so".
     return icu_src
 
 

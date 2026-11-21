@@ -15,7 +15,7 @@ EX="$WORK_DIR/pkg_extract"
 rm -rf "$EX"; mkdir -p "$EX"
 
 find_appdir() {  # locate dir holding the DesktopEditors binary inside a tree
-  find "$1" -type f -name "DesktopEditors" | head -n1 | xargs dirname
+  dirname "$(find "$1" -type f -name "DesktopEditors" | head -n1)"
 }
 
 overlay_app() {  # $1 = target app dir: push rebuilt binaries + web assets
