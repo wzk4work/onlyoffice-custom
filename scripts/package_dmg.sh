@@ -162,6 +162,14 @@ mkdir -p "$DMG_SRC"
 cp -a "$APP" "$DMG_SRC/ONLYOFFICE.app"
 ln -s /Applications "$DMG_SRC/Applications"
 mkdir -p "$(dirname "$OUT_DMG")"
-hdiutil create -volname "ONLYOFFICE" -srcfolder "$DMG_SRC" -ov -format UDZO "$OUT_DMG"
+for attempt in 1 2 3 4 5; do
+  if hdiutil create -volname "ONLYOFFICE" -srcfolder "$DMG_SRC" -ov -format UDZO "$OUT_DMG"; then
+    break
+  fi
+  echo "hdiutil create failed (attempt $attempt), retrying in 20s..."
+  hdiutil info | grep -F "ONLYOFFICE" || true
+  sleep 20
+done
+[ -f "$OUT_DMG" ]
 ls -lh "$OUT_DMG"
 echo "DMG READY: $OUT_DMG"
