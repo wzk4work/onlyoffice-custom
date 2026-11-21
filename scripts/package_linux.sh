@@ -74,7 +74,7 @@ OUT_RPM="$OUT_DIR/onlyoffice-desktopeditors-${VER}-custom.$( [ "$ARCH" = x86_64 
   echo "%global _build_id_links none"
   echo "Name: $RPM_NAME"
   echo "Version: $RPM_VER"
-  echo "Release: ${RPM_REL}-custom"
+  echo "Release: ${RPM_REL}.custom"
   echo "Summary: ONLYOFFICE Desktop Editors (custom build)"
   echo "License: AGPL-3.0"
   echo "AutoReqProv: no"
