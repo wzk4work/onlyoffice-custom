@@ -12,10 +12,12 @@ if [ "$CLANG_ARCH" = "arm64" ]; then
   ARCH_DEFINE="_ARM_ONLY"
   ENT_VARIANT="ONLYOFFICE-arm"
   MIN_VER="11.0"
+  PLAT="mac_arm64"
 else
   ARCH_DEFINE="_X86_64_ONLY"
   ENT_VARIANT="ONLYOFFICE-x86_64"
   MIN_VER="10.12"
+  PLAT="mac_64"
 fi
 
 echo "== Step 1: Build web-apps =="
@@ -50,7 +52,7 @@ RES="$CONT/Resources"
 FW="$CONT/Frameworks"
 
 # Overlay updated ascdocumentscore.framework binary
-cp -f "$WORK_DIR/core/build/lib/mac_64/ascdocumentscore.framework/Versions/A/ascdocumentscore" \
+cp -f "$WORK_DIR/core/build/lib/$PLAT/ascdocumentscore.framework/Versions/A/ascdocumentscore" \
       "$FW/ascdocumentscore.framework/Versions/A/ascdocumentscore"
 
 # Overlay updated loginpage bundles
