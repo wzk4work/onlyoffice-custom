@@ -7,6 +7,16 @@ OFFICIAL_APP="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
 OUT_DMG="$3"
 VER="${4:-10.0.0}"
 VER_CLEAN="${VER#v}"
+CLANG_ARCH="${5:-x86_64}"
+if [ "$CLANG_ARCH" = "arm64" ]; then
+  ARCH_DEFINE="_ARM_ONLY"
+  ENT_VARIANT="ONLYOFFICE-arm"
+  MIN_VER="11.0"
+else
+  ARCH_DEFINE="_X86_64_ONLY"
+  ENT_VARIANT="ONLYOFFICE-x86_64"
+  MIN_VER="10.12"
+fi
 
 echo "== Step 1: Build web-apps =="
 (
@@ -87,9 +97,9 @@ ARC=(-fobjc-arc)
 [[ "\$s" == *PFMoveApplication.m ]] && ARC=(-fno-objc-arc)
 lang="objective-c"
 [[ "\$s" == *.mm ]] && lang="objective-c++"
-xcrun clang -x "\$lang" -arch x86_64 -stdlib=libc++ "\${ARC[@]}" \\
-  -mmacosx-version-min=10.12 -isysroot "$SDK_SYSROOT" -O2 -fvisibility=hidden \\
-  -DNDEBUG -D_MAC -D_PRODUCT_ONLYOFFICE -D_X86_64_ONLY \\
+xcrun clang -x "\$lang" -arch "$CLANG_ARCH" -stdlib=libc++ "\${ARC[@]}" \\
+  -mmacosx-version-min="$MIN_VER" -isysroot "$SDK_SYSROOT" -O2 -fvisibility=hidden \\
+  -DNDEBUG -D_MAC -D_PRODUCT_ONLYOFFICE -D"$ARCH_DEFINE" \\
   "-DURL_WEBAPPS_HELP=@\\"https://download.onlyoffice.com/install/desktop/editors/help/v$VER_CLEAN/apps\\"" \\
   "-DURL_APPCAST_UPDATES=@\\"\\"" \\
   "-DURL_APPCAST_DEV_CHANNEL=@\\"\\"" \\
@@ -107,7 +117,7 @@ HELPER
 chmod +x "$OBJ_DIR/compile_one.sh"
 tr '\n' '\0' < "$SRC_FILE" | xargs -0 -P 4 -n 1 "$OBJ_DIR/compile_one.sh"
 
-xcrun clang++ -arch x86_64 -stdlib=libc++ -mmacosx-version-min=10.12 -isysroot "$SDK_SYSROOT" \
+xcrun clang++ -arch "$CLANG_ARCH" -stdlib=libc++ -mmacosx-version-min="$MIN_VER" -isysroot "$SDK_SYSROOT" \
   -o "$CONT/MacOS/ONLYOFFICE" "$OBJ_DIR"/*.o \
   -F "$FW" -F "$RES/converter" -F "$MACOS_DIR/Vendor/Sparkle" \
   -framework Cocoa -framework Foundation -framework AppKit -framework WebKit \
@@ -142,7 +152,7 @@ for loc in zh-Hans-CN.lproj zh-Hant-TW.lproj; do
 done
 
 echo "== Step 6: Ad-hoc codesign & verify =="
-ENT="$MACOS_DIR/ONLYOFFICE/Resources/ONLYOFFICE-x86_64/ONLYOFFICE.entitlements"
+ENT="$MACOS_DIR/ONLYOFFICE/Resources/$ENT_VARIANT/ONLYOFFICE.entitlements"
 for h in editors_helper.app "editors_helper (GPU).app" "editors_helper (Renderer).app"; do
   codesign --force --options runtime --entitlements "$ENT" --sign - "$FW/$h"
 done

@@ -1,4 +1,4 @@
-name: Build ONLYOFFICE macOS (x86_64)
+name: Build ONLYOFFICE macOS
 
 on:
   workflow_dispatch:
@@ -20,12 +20,26 @@ on:
 permissions:
   contents: write
 
+env:
+  OO_TAG: ${{ github.event.inputs.oo_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v10.0.0' }}
+
 jobs:
-  build-x86_64:
-    runs-on: macos-15-intel
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            plat: mac_64
+            runner: macos-15-intel
+            official_dmg: ONLYOFFICE-x86_64.dmg
+          - arch: arm64
+            plat: mac_arm64
+            runner: macos-15
+            official_dmg: ONLYOFFICE-arm.dmg
+
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    env:
-      OO_TAG: ${{ github.event.inputs.oo_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v10.0.0' }}
 
     steps:
       - name: Checkout patch repository
@@ -46,6 +60,7 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: "5.15.2"
+          arch: clang_64
           cache: true
 
       - name: Add Python 3.11 `python` shim to front of PATH
@@ -73,31 +88,31 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            work/core/Common/3dParty/icu/mac_64/build
-            work/core/Common/3dParty/boost/build/mac_64
+            work/core/Common/3dParty/icu/${{ matrix.plat }}/build
+            work/core/Common/3dParty/boost/build/${{ matrix.plat }}
             work/core/Common/3dParty/hunspell/hunspell
             work/core/Common/3dParty/hunspell/autogen
-            work/core/build/lib/mac_64/libCryptoPPLib.a
-            work/core/build/lib/mac_64/libCompoundFileLib.a
-          key: oo-sdk-static-deps-mac64-${{ env.OO_TAG }}-v1
+            work/core/build/lib/${{ matrix.plat }}/libCryptoPPLib.a
+            work/core/build/lib/${{ matrix.plat }}/libCompoundFileLib.a
+          key: oo-sdk-static-deps-${{ matrix.plat }}-${{ env.OO_TAG }}-v1
 
-      - name: Download & mount official ONLYOFFICE-x86_64.dmg (${{ env.OO_TAG }})
+      - name: Download & mount official ONLYOFFICE DMG (${{ matrix.official_dmg }}, ${{ env.OO_TAG }})
         run: |
-          curl -fL --retry 3 -o "$RUNNER_TEMP/ONLYOFFICE-x86_64.dmg" \
-            "https://github.com/ONLYOFFICE/DesktopEditors/releases/download/${OO_TAG}/ONLYOFFICE-x86_64.dmg"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/${{ matrix.official_dmg }}" \
+            "https://github.com/ONLYOFFICE/DesktopEditors/releases/download/${OO_TAG}/${{ matrix.official_dmg }}"
           mkdir -p "$RUNNER_TEMP/oo-mnt"
-          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/oo-mnt" "$RUNNER_TEMP/ONLYOFFICE-x86_64.dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/oo-mnt" "$RUNNER_TEMP/${{ matrix.official_dmg }}"
           ls -la "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app/Contents"
 
       - name: Build overlay desktop-sdk (`ascdocumentscore.framework`)
         run: |
           QT_PARENT="$(dirname "$QT_ROOT_DIR")"
-          python3 -u scripts/build_overlay_sdk.py "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$QT_PARENT"
+          python3 -u scripts/build_overlay_sdk.py "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$QT_PARENT" "${{ matrix.plat }}"
 
       - name: Build web-apps + loginpage, assemble app & package DMG
         run: |
-          OUT_DMG="$PWD/artifacts/ONLYOFFICE-${OO_TAG}-macos-x86_64-custom.dmg"
-          bash scripts/package_dmg.sh "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$OUT_DMG" "$OO_TAG"
+          OUT_DMG="$PWD/artifacts/ONLYOFFICE-${OO_TAG}-macos-${{ matrix.arch }}-custom.dmg"
+          bash scripts/package_dmg.sh "$PWD/work" "$RUNNER_TEMP/oo-mnt/ONLYOFFICE.app" "$OUT_DMG" "$OO_TAG" "${{ matrix.arch }}"
           shasum -a 256 "$OUT_DMG" | tee "$OUT_DMG.sha256"
 
       - name: Detach official DMG
@@ -107,22 +122,34 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ONLYOFFICE-${{ env.OO_TAG }}-macos-x86_64-custom
+          name: ONLYOFFICE-${{ env.OO_TAG }}-macos-${{ matrix.arch }}-custom
           path: |
             artifacts/*.dmg
             artifacts/*.sha256
           retention-days: 30
 
+  publish:
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all DMG artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ONLYOFFICE-${{ env.OO_TAG }}-macos-*-custom
+          merge-multiple: true
+          path: artifacts
+
       - name: Publish GitHub Release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_release == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ls -lh artifacts/
           REL_TAG="${OO_TAG}-custom"
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
             REL_TAG="${GITHUB_REF_NAME}"
           fi
-          NOTES="ONLYOFFICE Desktop Editors ${OO_TAG} macOS Intel (x86_64) 定制增强版。
+          NOTES="ONLYOFFICE Desktop Editors ${OO_TAG} macOS 定制增强版（Intel x86_64 + Apple Silicon arm64）。
 
           ### 包含改动
           - 主程序「设置 → 常规」新增 **自定义字体目录** 配置项（按需配置、持久化保存，支持 \`~\` 展开与 \`;\` 多目录）
@@ -138,6 +165,6 @@ jobs:
             gh release upload "$REL_TAG" artifacts/*.dmg artifacts/*.sha256 --clobber
           else
             gh release create "$REL_TAG" artifacts/*.dmg artifacts/*.sha256 \
-              --title "ONLYOFFICE ${OO_TAG} macOS (x86_64) Custom" \
+              --title "ONLYOFFICE ${OO_TAG} macOS Custom" \
               --notes "$NOTES"
           fi
