@@ -215,6 +215,15 @@ jobs:
           arch: win64_msvc2019_64
           cache: true
 
+      - name: Install MSVC v142 toolset (needed by boost/qmake pri)
+        if: matrix.native == '1'
+        run: |
+          & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" modify `
+            --installPath "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" `
+            --add Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64 `
+            --quiet --wait --norestart
+        shell: pwsh
+
       - name: Enable MSVC dev environment
         if: matrix.native == '1'
         uses: ilammy/msvc-dev-cmd@v1
